@@ -1,0 +1,1481 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>광고 지표 시뮬레이터</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: 용어 사전 → 원리 4가지(한 줄) → 지금 숫자+목표 역산(지표별 목표값) → 진단(조합 해석+히트맵) → 예산을 바꾸면?(슬라이더 + 깔때기). 노란 칸 = 입력 칸 */
+:root {
+  --bg: #F4F6F9; --surface: #FFFFFF; --surface-2: #F6F8FB;
+  --ink: #172033; --muted: #5B6578; --faint: #8A93A5; --line: #DCE1EA;
+  --accent: #2348C9; --accent-soft: #E8EDFC;
+  --input: #FFF9DB; --input-line: #F0E3A0; --input-ink: #3B3206;
+  --good: #137A4B; --good-bg: #E2F4EA; --bad: #C2372C; --bad-bg: #FBE5E2;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --r: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10141B; --surface: #171D27; --surface-2: #1C2330; --ink: #E7EBF2; --muted: #A2ACBD; --faint: #7A8497; --line: #2B3444;
+    --accent: #7F9CFF; --accent-soft: #212B45; --input: #3A3414; --input-line: #7A6A1E; --input-ink: #FFF1B0;
+    --good: #5ACB8E; --good-bg: #16301F; --bad: #F2857A; --bad-bg: #3A1D1A; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10141B; --surface: #171D27; --surface-2: #1C2330; --ink: #E7EBF2; --muted: #A2ACBD; --faint: #7A8497; --line: #2B3444;
+  --accent: #7F9CFF; --accent-soft: #212B45; --input: #3A3414; --input-line: #7A6A1E; --input-ink: #FFF1B0;
+  --good: #5ACB8E; --good-bg: #16301F; --bad: #F2857A; --bad-bg: #3A1D1A; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+.wrap {
+  max-width: 1580px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 56px;
+}
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header .eyebrow { font-size: 13px; font-weight: 600; color: var(--accent); }
+header h1 { font-size: 30px; font-weight: 700; margin-top: 4px; }
+header p { color: var(--muted); margin-top: 8px; max-width: none; }
+
+.step { display: flex; flex-direction: column; gap: 14px; }
+.step + .step { border-top: 1px solid var(--line); padding-top: 40px; margin-top: 16px; }
+.step-head { display: flex; gap: 12px; align-items: baseline; }
+.step-no { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--surface); font-weight: 700; font-size: 14px; display: grid; place-items: center; transform: translateY(-3px); }
+.step-head h2 { font-size: 21px; font-weight: 700; }
+.step-head p { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; min-width: 0; }
+
+/* 1. 원리 */
+.rules { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.rule .rn, .rule h3, .rule > .eq { cursor: pointer; }
+.rule h3:hover { color: var(--accent); }
+.rule { display: flex; flex-direction: column; gap: 8px; }
+.rule .rn { font-family: var(--font-num); font-size: 13px; font-weight: 600; color: var(--accent); }
+.rule h3 { font-size: 17px; font-weight: 700; line-height: 1.45; }
+.rule .eq { font-family: var(--font-num); font-size: 13px; background: var(--accent-soft); color: var(--accent); border-radius: 6px; padding: 6px 6px 6px 10px; display: flex; align-items: center; gap: 8px; }
+.rule .eq-t { flex: 1; min-width: 0; }
+.eq-tog { flex: none; border: 0; background: none; padding: 0 4px; color: var(--accent); font-size: 13px; line-height: 1; cursor: pointer; transition: transform 0.15s ease; }
+.eq-tog:hover { opacity: 0.7; }
+.rule.is-open .eq-tog { transform: rotate(180deg); }
+.rule-more[open] .rm-body { margin-top: 4px; }
+.rule p { color: var(--muted); font-size: 14px; }
+.rule-more > summary { display: none; }
+.rule-more > summary::-webkit-details-marker { display: none; }
+.rule-more .rm-body { display: flex; flex-direction: column; gap: 8px; }
+.rule p b { color: var(--ink); }
+.ex { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.ex > div { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.ex b { display: block; color: var(--ink); font-size: 13px; }
+.ex .tgt { display: table; font-family: var(--font-num); font-size: 12px; font-weight: 600; color: var(--good); background: var(--good-bg); border-radius: 4px; padding: 1px 7px; margin: 3px 0 4px; }
+.ways4 { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+.ways4 li { display: flex; gap: 8px; align-items: baseline; }
+.ways4 li::before { content: "↑"; color: var(--good); font-weight: 700; }
+.ways4 li:last-child::before { content: "↓"; }
+.ways4.why li::before { content: "·"; color: var(--muted); }
+.ways4.why b { min-width: 52px; }
+.ways4 b { color: var(--ink); font-weight: 600; min-width: 48px; }
+
+/* 용어 격자 */
+.terms { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.term { padding: 12px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.term b { font-size: 14px; }
+.term span { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.term code { font-family: var(--font-body); font-size: 12px; font-weight: 600; letter-spacing: -0.03em; color: var(--accent); margin-top: auto; padding-top: 4px; white-space: nowrap; }
+
+/* 3. 지금 숫자 */
+.inputs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.fld { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fld .nm { font-weight: 700; font-size: 14px; }
+.fld .ds { font-size: 13px; color: var(--muted); line-height: 1.45; min-height: 36px; }
+#curInputs .ds, #rawInputs .ds { display: none; }
+.in { display: flex; align-items: center; gap: 4px; background: var(--input); border: 1px solid var(--input-line); border-radius: 8px; padding: 0 10px; color: var(--input-ink); }
+.in:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.in input { border: 0; background: transparent; color: inherit; font-family: var(--font-num); font-size: 16px; font-weight: 600; width: 100%; min-width: 0; padding: 8px 0; text-align: right; outline: none; }
+.in .u { font-size: 13px; opacity: 0.75; flex: none; }
+
+.mode-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.mode-hint { font-size: 13px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+.seg button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; padding: 7px 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.fld .calc { font-family: var(--font-body); font-size: 13px; letter-spacing: -0.02em; color: var(--accent); font-weight: 600; min-height: 19px; line-height: 1.5; }
+.fld .calc .cl { display: block; white-space: nowrap; }
+@media (max-width: 1200px) { .fld .calc .cl { white-space: normal; } }
+
+/* 4. 바꿔보기 */
+.play { display: grid; grid-template-columns: minmax(340px, 0.72fr) minmax(0, 1.28fr); gap: 16px; align-items: stretch; }
+.levers { display: flex; flex-direction: column; gap: 16px; }
+.play > .card.levers { justify-content: space-between; }
+.play > .card.levers > #levers { flex: 1; justify-content: space-around; }
+.lv-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.lv-top b { font-size: 14px; }
+.chg { font-family: var(--font-num); font-size: 13px; font-weight: 600; }
+.lv-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 12px; align-items: center; margin-top: 4px; }
+.lv-row input[type="range"] { width: 100%; accent-color: var(--accent); }
+.lv-sub { font-size: 12px; color: var(--muted); font-family: var(--font-num); margin-top: 2px; }
+.real { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); font-size: 14px; cursor: pointer; }
+.real input { accent-color: var(--accent); width: 17px; height: 17px; margin-top: 3px; flex: none; }
+.real small { display: block; color: var(--muted); font-size: 13px; }
+.btn { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+
+.funnel { display: flex; flex-direction: column; }
+.f-head, .f-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.1fr) 64px; gap: 8px; align-items: baseline; }
+.f-head { font-size: 12px; color: var(--faint); font-weight: 600; padding: 0 12px 6px; }
+.f-head span:not(:first-child) { text-align: right; }
+.f-row { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.f-row .lb { font-weight: 600; font-size: 14px; }
+.f-row .v { text-align: right; font-family: var(--font-num); font-size: 14px; white-space: nowrap; }
+.f-row .v.now { color: var(--muted); }
+.f-row .v.aft { font-weight: 600; }
+.f-row .d { text-align: right; font-family: var(--font-num); font-size: 13px; font-weight: 600; }
+.f-op { font-size: 13px; color: var(--accent); padding: 5px 0 5px 22px; font-weight: 600; }
+.f-op span { color: var(--muted); font-weight: 400; font-family: var(--font-num); font-size: 12px; margin-left: 6px; }
+.up { color: var(--good); } .down { color: var(--bad); } .flat { color: var(--faint); }
+
+.results { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; margin-top: 14px; }
+.res { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.res.main { background: var(--accent-soft); border-color: transparent; }
+.res .rl { font-size: 13px; font-weight: 600; color: var(--muted); }
+.res .rv { font-family: var(--font-num); font-size: 17px; font-weight: 600; white-space: nowrap; }
+.res.main .rv { font-size: 22px; color: var(--accent); }
+.res .rs { font-size: 12px; color: var(--muted); }
+.msgs { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.msg { font-size: 14px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); border-left: 3px solid var(--accent); }
+.msg.warn { border-left-color: var(--bad); }
+
+/* 5. 목표 */
+.goal-row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.goal-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 17px; line-height: 1.5; background: var(--accent-soft); border-radius: 10px; padding: 10px 16px; }
+.goal-head label { font-weight: 700; }
+.goal-head .arr { color: var(--muted); }
+.goal-head .goal-in { width: 110px; border-width: 2px; }
+.goal-head .goal-in input { font-size: 17px; font-weight: 700; padding: 6px 0; }
+.goal-head b { color: var(--accent); font-family: var(--font-num); }
+.goal-head .ok { color: var(--good); font-weight: 700; }
+.now-wrap { display: block; }
+.roas-box { display: flex; flex-direction: column; gap: 14px; justify-content: center; background: var(--accent-soft); border-color: transparent; }
+.rb-line { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.rb-item { display: flex; align-items: center; gap: 8px; }
+.rb-arr { color: var(--muted); font-size: 17px; }
+.rb-l { font-size: 13px; font-weight: 700; color: var(--muted); }
+.rb-v { font-family: var(--font-num); font-size: 22px; font-weight: 700; color: var(--ink); }
+.roas-box .goal-in { width: 104px; border-width: 2px; }
+.roas-box .goal-in input { font-size: 20px; font-weight: 700; padding: 5px 0; }
+.rb-gap { font-size: 14px; color: var(--ink); line-height: 1.5; }
+.rb-gap b, .goal-sum b { color: var(--accent); font-family: var(--font-num); }
+.rb-gap .ok, .goal-sum .ok { color: var(--good); font-weight: 700; }
+.goal-sum { font-size: 16px; background: var(--accent-soft); border-radius: 10px; padding: 10px 16px; }
+.plan-scroll { overflow-x: auto; }
+table.plan { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+.plan th, .plan td { padding: 11px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.plan thead th { font-size: 13px; color: var(--muted); font-weight: 700; background: var(--surface-2); }
+.plan thead th small, .plan tbody th small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
+.plan thead th.pa { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
+.plan thead th.pb { color: var(--good); box-shadow: inset 0 3px 0 var(--good); }
+.plan tbody th { font-size: 14px; font-weight: 700; width: 22%; }
+.plan td.nv { font-family: var(--font-num); color: var(--muted); }
+.plan td.pa b { font-family: var(--font-num); font-size: 16px; color: var(--accent); }
+.plan td.pb b { font-family: var(--font-num); font-size: 16px; color: var(--good); }
+.plan .pc { font-family: var(--font-num); font-size: 13px; font-weight: 700; color: var(--ink); margin-left: 6px; }
+.plan .na { color: var(--faint); font-size: 13px; }
+.plan tr.tot th, .plan tr.tot td { border-bottom: 0; background: var(--surface-2); font-weight: 600; }
+@media (max-width: 960px) { .now-wrap { grid-template-columns: minmax(0, 1fr); } }
+.paths { display: grid; grid-template-columns: minmax(0, 1.45fr) auto minmax(0, 1fr); gap: 16px; align-items: stretch; }
+.path { border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.path-s { font-size: 14px; color: var(--muted); margin-top: -4px; }
+.path-s b { color: var(--ink); }
+.path .ways { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.way .cmp { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.way .cmp small { display: block; font-family: var(--font-body); font-size: 12px; color: var(--muted); font-weight: 500; }
+.way .cn { font-family: var(--font-num); font-size: 16px; font-weight: 600; color: var(--muted); }
+.way .ca { color: var(--faint); font-size: 16px; padding-bottom: 1px; }
+.way .cg { font-family: var(--font-num); font-size: 16px; font-weight: 700; color: var(--accent); }
+.way .wfoot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.way .wfoot .pill { margin-top: 0; }
+.wch { font-family: var(--font-num); font-size: 13px; font-weight: 700; color: var(--ink); }
+.or { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+.or::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px dashed var(--line); }
+.or span { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.bar { display: block; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.bar i.b { background: var(--good); }
+.way .wh b { color: var(--ink); font-family: var(--font-num); }
+.srow { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 4px 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.srow .sl { font-weight: 700; font-size: 14px; }
+.srow .sv { font-family: var(--font-num); font-size: 14px; }
+.srow .sp { font-size: 13px; font-weight: 700; color: var(--good); margin-left: 4px; }
+.stot { font-size: 14px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.stot b { color: var(--good); font-family: var(--font-num); }
+.stot .pill { margin-top: 0; }
+.snote { font-size: 13px; color: var(--muted); }
+.opt { display: flex; flex-direction: column; gap: 10px; }
+.opt-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+.opt-tag { font-size: 12px; font-weight: 700; color: var(--surface); background: var(--accent); border-radius: 6px; padding: 3px 9px; }
+.opt-tag.b { background: var(--good); }
+.ways { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.way { border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); min-width: 0; }
+.way .wl { font-size: 13px; font-weight: 600; color: var(--muted); }
+.way .wl b { color: var(--ink); font-weight: 700; font-size: 14px; }
+.way .wv { font-family: var(--font-num); font-size: 16px; white-space: nowrap; }
+.way .wv b { font-size: 17px; }
+.way .wh { font-size: 13px; color: var(--muted); }
+.pill { align-self: flex-start; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; margin-top: 4px; }
+.pill.good { background: var(--good-bg); color: var(--good); } .pill.bad { background: var(--bad-bg); color: var(--bad); }
+.split { display: flex; flex-direction: column; gap: 12px; color: var(--ink); font-size: 14px; }
+.split b { color: var(--good); }
+
+/* 6. 기준치 */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tile .tl { font-size: 13px; font-weight: 600; color: var(--muted); }
+.tile .tv { font-family: var(--font-num); font-size: 20px; font-weight: 600; }
+.tile .tf { font-size: 12px; color: var(--faint); }
+.tile .ts { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tile .pill { margin-top: 0; }
+.heat-wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+table.heat { border-collapse: collapse; font-size: 13px; }
+.heat th, .heat td { border: 1px solid var(--line); padding: 6px 12px; min-width: 64px; text-align: center; font-family: var(--font-num); white-space: nowrap; }
+.heat th { background: var(--surface-2); font-size: 13px; font-weight: 700; color: var(--ink); }
+.heat th small { display: block; margin-top: 1px; font-family: var(--font-body); font-size: 11px; color: var(--muted); font-weight: 600; }
+.heat th.corner { font-family: var(--font-body); font-size: 12px; font-weight: 600; color: var(--muted); text-align: left; line-height: 1.4; }
+.heat th.now small { color: var(--accent); }
+.heat td.ok { background: var(--good-bg); color: var(--good); }
+.heat td.near { background: var(--surface); color: var(--ink); } /* 노랑은 입력칸 전용 → 조금 부족은 흰 칸 */
+.heat td.no { background: var(--bad-bg); color: var(--bad); }
+.heat td.cur { box-shadow: inset 0 0 0 2px var(--ink); font-weight: 700; }
+.heat-legend { display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: var(--muted); }
+.heat-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.heat-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
+.heat-legend i.ok { background: var(--good-bg); border: 1px solid var(--good); }
+.heat-legend i.near { background: var(--surface); border: 1px solid var(--line); }
+.heat-legend i.no { background: var(--bad-bg); border: 1px solid var(--bad); }
+.heat-legend i.cur { background: transparent; border: 2px solid var(--ink); }
+
+/* 7. 조합 해석 */
+.bench { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; }
+.bench .fld { width: 160px; }
+.bench .fld .nm { font-size: 13px; color: var(--muted); font-weight: 600; }
+.pos { font-size: 16px; font-weight: 500; line-height: 1.8; color: var(--ink); background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 10px; padding: 14px 18px; }
+.pos .num { font-family: var(--font-num); font-weight: 700; }
+.pos .vd { display: inline-block; font-weight: 700; font-size: 14px; line-height: 1.4; padding: 2px 8px; border-radius: 6px; }
+.pos .vd.good { color: var(--good); background: var(--good-bg); }
+.pos .vd.bad { color: var(--bad); background: var(--bad-bg); }
+.pos .vd.eq { color: var(--muted); background: var(--surface); }
+.quads { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.qt { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+.quad { display: grid; grid-template-columns: auto repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 14px; }
+.quad .qh { font-size: 13px; font-weight: 700; color: var(--muted); align-self: center; text-align: center; line-height: 1.4; }
+.quad .qh.side { text-align: left; }
+.quad .qh.on { color: var(--accent); }
+.quad .qc.on.sb::after { background: var(--accent); color: #fff; }
+.quad .qc.on.sg::after { background: #1F9D5C; color: #fff; }
+.quad .qc.on.sy::after { background: #FFE14D; color: #3D3000; }
+.quad .qc.on.sr::after { background: #D93B30; color: #fff; }
+.quad .qc { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--surface-2); color: var(--muted); }
+.quad .qc b { display: block; color: var(--ink); font-size: 14px; margin-bottom: 2px; }
+.quad .qc.on { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.quad .qc.on b { color: var(--accent); }
+.quad .qc { position: relative; }
+.quad .qc.on::after { content: "지금 여기"; position: absolute; top: -9px; right: 10px; background: var(--accent); color: var(--surface); font-size: 11px; font-weight: 700; line-height: 1; padding: 4px 8px; border-radius: 999px; }
+
+.sub-h { font-size: 17px; font-weight: 700; }
+.sub-p { font-size: 14px; color: var(--muted); margin-top: 2px; }
+/* 4. 만약에 */
+.wi { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 24px; align-items: start; }
+.wi-grid { display: flex; flex-direction: column; gap: 12px; }
+.wi-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; align-items: center; }
+.wi-pc { font-family: var(--font-num); font-size: 13px; font-weight: 700; min-width: 56px; }
+.wi-nm { font-weight: 700; font-size: 14px; line-height: 1.3; }
+.wi-nm small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); }
+.wi-ctrl { display: flex; gap: 6px; align-items: center; }
+.wi-ctrl button { font: inherit; font-size: 13px; font-weight: 700; color: var(--accent); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; cursor: pointer; min-width: 40px; }
+.wi-ctrl button:hover { border-color: var(--accent); background: var(--accent-soft); }
+.wi-in { width: 96px; }
+.wi-val { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.wi-tin { width: 132px; }
+.wi-val { font-family: var(--font-num); font-size: 14px; color: var(--muted); }
+.wi-val b { color: var(--ink); }
+.wi-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.wi-res { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.wi-big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; font-size: 16px; }
+.wi-big .r { font-family: var(--font-num); font-size: 22px; font-weight: 700; color: var(--accent); }
+.wi-big .r.old { font-size: 20px; color: var(--muted); font-weight: 600; }
+.goal-st { font-size: 14px; font-weight: 600; }
+.goal-st.done { color: var(--good); }
+.wi-sub { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 13px; color: var(--muted); }
+.wi-sub b { display: block; font-family: var(--font-num); font-size: 16px; color: var(--ink); }
+@media (max-width: 960px) { .wi { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 520px) { .wi-row { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+
+.merged { display: flex; flex-direction: column; gap: 20px; }
+.merged > .paths { margin-top: 0; }
+.now-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* 내 광고 데이터 입력: 용어 사전과 같은 격자 카드 */
+.inputs.cellgrid { gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.inputs.cellgrid .fld { background: var(--surface); padding: 14px 16px; }
+.roas-box { border-radius: 12px; padding: 18px; }
+.paths { grid-template-columns: minmax(0, 1fr) !important; gap: 32px !important; }
+.path { padding: 20px; }
+.path .ways { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+.or::before { top: 50% !important; bottom: auto !important; left: 0 !important; right: 0 !important; border-left: 0 !important; border-top: 1px dashed var(--line); }
+.path.b .split { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px 8px; align-items: stretch; }
+.path.b .amp { align-self: center; font-size: 22px; font-weight: 700; color: var(--good); padding: 0; }
+.path.b .srow { border: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.path.b .srow .sv { font-size: 16px; font-weight: 600; color: var(--muted); }
+.path.b .srow .sv b { font-size: 16px; color: var(--good); }
+.path.b .stot, .path.b .snote { grid-column: 1 / -1; }
+@media (max-width: 1250px) { .path .ways { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
+@media (max-width: 640px) { .path .ways, .path.b .split { grid-template-columns: minmax(0, 1fr) !important; } .path.b .amp { justify-self: center; } }
+
+/* 방법 A 카드: 내용 길이에 맞춘 폭 + 남는 공간은 고르게 */
+.path .ways { display: flex !important; flex-wrap: wrap; gap: 10px; }
+.path .ways .way { flex: 1 1 auto; min-width: max-content; padding: 14px; gap: 8px; }
+.path .ways { gap: 6px !important; align-items: stretch; }
+.or-sep { flex: 0 0 auto; align-self: center; font-size: 14px; font-weight: 700; color: var(--accent); font-style: italic; padding: 0 2px; }
+@media (max-width: 640px) { .or-sep { flex-basis: 100%; text-align: center; } }
+.path .ways .way .wl { text-align: left; }
+.path .ways .way .cmp { align-self: center; text-align: center; }
+.path .ways .way .wl, .path .ways .way .cmp { white-space: nowrap; flex-wrap: nowrap; }
+.path .ways .way .cmp { justify-content: center; gap: 12px; }
+@media (max-width: 640px) { .path .ways .way { flex-basis: 100%; min-width: 0; } .path .ways .way .wl { white-space: normal; } }
+
+.path.b .srow { justify-content: center; gap: 10px; }
+.path.b .srow .sl small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
+.path.b .b-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; white-space: nowrap; }
+.path.b .b-head small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.path.b .b-now { font-family: var(--font-num); font-size: 16px; font-weight: 600; color: var(--muted); letter-spacing: -0.02em; }
+.path.b .b-in { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: nowrap; min-width: 0; }
+.path.b .srow { min-width: 0; }
+.path.b .b-in .ca { color: var(--faint); font-size: 16px; }
+.path.b .wi-tin { width: auto; flex: 1 1 96px; max-width: 132px; min-width: 0; }
+.path.b .wi-tin input { min-width: 0; width: 100%; }
+.path.b .wi-tin input { font-size: 16px; }
+.b-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 20px; align-items: center; }
+.b-foot .wi-res { padding: 14px 18px; }
+@media (max-width: 960px) { .b-foot { grid-template-columns: minmax(0, 1fr); } .path.b .split { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important; } }
+.b-main { display: grid; grid-template-columns: minmax(0, 1fr) auto 420px; gap: 12px; align-items: stretch; }
+.b-main .wi-btns { flex-direction: column; flex-wrap: nowrap; justify-content: center; margin-top: 0; }
+.b-main .wi-btns .btn { width: 100%; }
+.b-main .wi-res { justify-content: center; gap: 6px; padding: 12px 16px; }
+.b-main .wi-big .r { font-size: 22px; }
+.b-main .wi-big .r.old { font-size: 17px; }
+.b-main .goal-st { font-size: 13px; line-height: 1.45; }
+.b-main .wi-sub { grid-template-columns: minmax(0, 1fr); gap: 2px; font-size: 12px; }
+.b-main .wi-sub > span { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.b-main .wi-sub b { display: inline; white-space: nowrap; }
+.b-main .wi-sub b { font-size: 13px; }
+.b-foot { display: flex !important; justify-content: flex-start; }
+@media (max-width: 1250px) { .b-main { grid-template-columns: minmax(0, 1fr); } .b-main .wi-btns { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; } .b-main .wi-btns .btn { width: auto; } }
+.opt-title .goal-inline { display: inline-flex; width: 96px; margin: 0 2px; border-width: 2px; vertical-align: middle; }
+.opt-title .goal-inline input { font-size: 17px; font-weight: 700; padding: 3px 0; }
+.path-s b { color: var(--ink); }
+#aSum b { color: var(--accent); font-family: var(--font-num); }
+#aSum .ok { color: var(--good); font-weight: 700; }
+/* 내 광고 데이터 입력: 차분한 표 형태 */
+.now-left { gap: 0 !important; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.now-left .mode-row { padding: 10px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.now-left .mode-hint { font-size: 13px; }
+.now-left .seg { background: var(--surface); border-radius: 7px; }
+.now-left .seg button { font-size: 14px; padding: 8px 16px; }
+.now-left .seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.now-left .inputs.cellgrid { border: 0; border-radius: 0; }
+.now-left .inputs.cellgrid .fld { padding: 14px 24px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; align-content: start; gap: 6px 14px; }
+.now-left .inputs.cellgrid .fld .calc { grid-column: 1 / -1; min-height: 0; }
+.now-left .fld .nm { font-size: 14px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.now-left .in { border-radius: 6px; padding: 0 12px; }
+.now-left .in input { font-size: 16px; font-weight: 600; padding: 6px 0; }
+.now-left .fld .calc { color: var(--muted); font-weight: 500; font-size: 12px; }
+
+/* 두 사분면 사이 세로 구분선 */
+.quads { gap: 0 !important; }
+.quads > div { padding: 4px 40px; }
+.quads > div:last-child { border-left: 1px solid var(--line); }
+@media (max-width: 960px) { .quads > div { padding: 0 8px; } .quads > div:last-child { border-left: 0; border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px; } }
+
+footer { color: var(--faint); font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 16px; }
+footer a { color: var(--accent); font-weight: 600; }
+
+@media (max-width: 1100px) { .rules { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .rules { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1300px) { .terms { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (max-width: 1250px) { .path .ways { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 960px) {
+  .paths { grid-template-columns: minmax(0, 1fr); }
+  .or::before { top: 50%; bottom: auto; left: 0; right: 0; border-left: 0; border-top: 1px dashed var(--line); }
+  .terms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .play, .quads, .heat-wrap { grid-template-columns: minmax(0, 1fr); }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .heat-wrap .scroll-x { overflow-x: auto; }
+  .ways { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .path .ways { grid-template-columns: minmax(0, 1fr); }
+  header h1 { font-size: 24px; }
+  .terms, .inputs { grid-template-columns: minmax(0, 1fr); }
+  .fld .ds { min-height: 0; }
+  .bench .fld { width: calc(50% - 10px); }
+  .lv-row { grid-template-columns: minmax(0, 1fr) 116px; }
+  .f-head, .f-row { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1fr) 52px; gap: 6px; }
+  .f-row .v { font-size: 13px; }
+  .results { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .res.main { grid-column: 1 / -1; }
+  .ways { grid-template-columns: minmax(0, 1fr); }
+  .quad { font-size: 13px; }
+}
+@media (max-width: 960px) { .path.b .split { grid-template-columns: minmax(0, 1fr) !important; } .path.b .amp { justify-self: center; } }
+@media (max-width: 640px) { .b-main .wi-sub > span { flex-direction: column; align-items: flex-start; gap: 0; } .b-main .wi-sub > span > * { white-space: normal; } }
+/* 3단계: 사분면 2개 + 히트맵 = 3열 */
+.diag3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.diag3 .quads { display: contents; }
+.diag3 .quads > div, .diag3 .heat-col { padding: 4px 24px; min-width: 0; }
+.diag3 .quads > div:first-child { padding-left: 0; }
+.diag3 .heat-col { padding-right: 0; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.diag3 .heat-col .qt { margin-bottom: 0; }
+.diag3 .heat-wrap { flex-direction: column; align-items: stretch; gap: 10px; }
+.diag3 table.heat { width: 100%; font-size: 12px; }
+.diag3 .heat th, .diag3 .heat td { padding: 6px 4px; min-width: 0; }
+.diag3 .heat th { font-size: 12px; }
+.diag3 .heat th.corner { font-size: 11px; }
+.diag3 .heat-legend { flex-direction: row; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+.heat-note2 { font-size: 13px; color: var(--muted); line-height: 1.55; }
+.diag3 .scroll-x { min-width: 0; max-width: 100%; overflow-x: auto; }
+@media (max-width: 1250px) {
+  .diag3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .diag3 .quads > div:last-child { padding-right: 0; }
+  .diag3 .heat-col { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); padding: 20px 0 0; margin-top: 20px; }
+  .diag3 table.heat { width: auto; }
+  .diag3 .heat th, .diag3 .heat td { padding: 6px 10px; min-width: 56px; }
+}
+@media (max-width: 960px) {
+  .diag3 { grid-template-columns: minmax(0, 1fr); }
+  .diag3 .quads > div { padding: 0; }
+  .diag3 .quads > div:last-child { border-left: 0; border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px; }
+}
+.scen-card { display: flex; flex-direction: column; gap: 12px; }
+.scen-card .scroll-x { overflow-x: auto; min-width: 0; border: 1px solid var(--line); border-radius: 10px; }
+table.scen { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 1100px; }
+.scen th, .scen td { padding: 12px 14px; text-align: right; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); white-space: nowrap; }
+.scen thead th { background: var(--surface-2); font-size: 13px; font-weight: 700; color: var(--ink); }
+.scen th:first-child, .scen td:first-child { text-align: left; border-left: 0; background: var(--surface-2); font-weight: 700; }
+.scen td { font-family: var(--font-num); }
+.scen td:first-child { font-family: var(--font-body); }
+.scen td:first-child small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 2px; white-space: normal; }
+.scen tbody tr:last-child td { border-bottom: 0; font-size: 13px; }
+.scen td.up { color: var(--accent); font-weight: 700; }
+.scen td.down { color: var(--bad); font-weight: 700; }
+.scen td.flat { color: var(--faint); }
+.scen td.hl { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; }
+.heat th.corner { position: relative; min-width: 72px; height: 44px; padding: 0 !important; background: var(--surface-2) linear-gradient(to top right, transparent calc(50% - 0.6px), var(--faint) calc(50% - 0.6px), var(--faint) calc(50% + 0.6px), transparent calc(50% + 0.6px)); }
+.heat th.corner .c-top { position: absolute; top: 4px; right: 6px; }
+.heat th.corner .c-bot { position: absolute; bottom: 4px; left: 6px; }
+.quad .qc:not(.on) { opacity: 0.4; }
+.heat td.tgt { outline: 2px dashed var(--accent); outline-offset: -4px; font-weight: 700; }
+.heat-go { font-size: 13px; line-height: 1.55; background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; color: var(--ink); }
+.heat-go b { color: var(--accent); }
+.heat-legend i.tgt { background: transparent; border: 2px dashed var(--accent); }
+/* 방법 B 카드: 제목 가운데 위, 지금 → 목표값 2칸 가운데 정렬 */
+.path.b .srow { align-items: stretch; justify-content: center; gap: 10px; text-align: left; padding: 14px; }
+.path.b .srow .b-head { display: flex; align-items: baseline; justify-content: flex-start; gap: 6px; flex-wrap: wrap; }
+.path.b .srow .b-head small { display: inline; }
+.path.b .b-in { display: grid; grid-template-columns: auto auto minmax(0, 120px); justify-content: start; align-items: end; gap: 8px; width: 100%; white-space: nowrap; }
+.path.b .b-col { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.path.b .b-col small { font-size: 12px; color: var(--muted); font-weight: 500; }
+.path.b .b-now { font-family: var(--font-num); font-size: 16px; font-weight: 600; color: var(--muted); line-height: 38px; }
+.path.b .b-in .ca { line-height: 38px; }
+.path.b .b-col .wi-tin { width: 100%; max-width: none; flex: none; }
+.path.b .b-col:last-child { align-items: stretch; }
+.path.b .b-col:last-child small { text-align: left; }
+.path.b .srow { container-type: inline-size; }
+@container (max-width: 210px) {
+  .path.b .b-in { grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 6px; }
+  .path.b .b-in .ca { display: none; }
+  .path.b .b-col:first-child { flex-direction: row; gap: 6px; align-items: baseline; }
+  .path.b .b-now { line-height: 1.3; }
+  .path.b .b-col:last-child { width: 100%; max-width: 140px; }
+}
+@media (max-width: 1500px) { .b-main { grid-template-columns: minmax(0, 1fr); } .b-main .wi-btns { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; } .b-main .wi-btns .btn { width: auto; } }
+@media (max-width: 1250px) { .now-left .inputs.cellgrid .fld { padding: 12px 14px 10px; gap: 6px 10px; } .now-left .in { padding: 0 8px; } }
+.h-with-click { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.click-all { border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; font-weight: 700; padding: 0; cursor: pointer; }
+.click-all:hover { text-decoration: underline; opacity: 1; }
+.click-all:hover { opacity: 0.85; }
+@media (max-width: 1100px) { .now-left .inputs.cellgrid .fld { grid-template-columns: minmax(0, 1fr); } }
+/* 방법 B 카드: 1줄 '지금 값', 2줄 '목표값 [노란 입력칸]' (라벨 바로 오른쪽에 입력칸) */
+.path.b .b-in { display: flex !important; flex-direction: column; align-items: stretch; gap: 8px; }
+.path.b .b-in .ca { display: none; }
+.path.b .b-col { flex-direction: row !important; align-items: center !important; gap: 8px; }
+.path.b .b-col small { flex: none; min-width: 38px; text-align: left !important; }
+.path.b .b-now { line-height: 1.3; }
+.path.b .b-col:last-child .wi-tin { flex: 1 1 auto; width: auto; max-width: 150px; min-width: 0; }
+.scen th:first-child, .scen td:first-child { width: 120px; max-width: 120px; }
+.scen td:first-child small { white-space: normal; word-break: keep-all; line-height: 1.4; }
+/* 내 광고 지표: 용어 사전처럼 한 줄 칸 표. 노란 입력칸 = 직접 입력, 나머지 = 자동 계산 */
+.mrow { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr); gap: 1px; background: var(--line); }
+.mc { background: var(--surface); padding: 12px 10px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mc .nm { font-size: 14px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.mc .nm small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.mc .in { padding: 0 8px; border-radius: 6px; }
+.mc .in input { font-size: 14px; padding: 6px 0; }
+.mc .mv { font-family: var(--font-num); font-size: 16px; font-weight: 700; color: var(--ink); line-height: 31px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc code { font-family: var(--font-body); font-size: 12px; font-weight: 600; letter-spacing: -0.03em; color: var(--accent); margin-top: auto; white-space: normal; word-break: keep-all; line-height: 1.35; }
+.mc-in code { color: var(--muted); }
+@media (max-width: 1400px) { .mrow { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .mrow { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 440px) { .mrow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* 슬라이더: 지금 내 광고 지표 위치(변화 0%)에 세로 막대 */
+.rng-wrap { position: relative; display: block; min-width: 0; padding-bottom: 14px; }
+.rng-wrap input[type="range"] { position: relative; z-index: 1; display: block; margin: 0; }
+.rng-now { position: absolute; top: -3px; bottom: 11px; left: calc(8px + (100% - 16px) * var(--p)); width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; opacity: 0.55; pointer-events: none; }
+.rng-now i { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 1px; font-style: normal; font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+/* 5단계: 증액·감액 */
+.bud-card { display: flex; flex-direction: column; gap: 16px; }
+.bud-go { font-size: 17px; font-weight: 600; line-height: 1.6; border-radius: 10px; padding: 14px 18px; border-left: 4px solid var(--accent); background: var(--accent-soft); color: var(--ink); }
+.bud-go b { color: var(--accent); }
+.bud-go.no { border-left-color: var(--bad); background: var(--bad-bg); }
+.bud-go.no b { color: var(--bad); }
+.bud-go .sub { font-size: 14px; font-weight: 500; color: var(--ink); }
+.bud-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.bud-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.bud-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.bud-legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
+.bud-legend .lg-avg { border-color: var(--accent); }
+.bud-legend .lg-inc { border-color: #E8590C; }
+.bud-legend .lg-goal { border-top: 2px dashed var(--ink); }
+.bud-svg { width: 100%; height: auto; display: block; }
+.bud-svg .gl { stroke: var(--line); stroke-width: 1; }
+.bud-svg .ax { fill: var(--muted); font-size: 12px; font-family: var(--font-num); }
+.bud-svg .avg { fill: none; stroke: var(--accent); stroke-width: 3; }
+.bud-svg .inc { fill: none; stroke: #E8590C; stroke-width: 2; }
+.bud-svg .goal { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 6 5; opacity: 0.7; }
+.bud-svg .goalt { fill: var(--ink); font-size: 12px; font-weight: 700; }
+.bud-svg .now { stroke: var(--ink); stroke-width: 1.5; opacity: 0.45; }
+.bud-svg .nowt { fill: var(--muted); font-size: 12px; font-weight: 700; }
+.bud-svg .nowpt { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.bud-svg .mk { fill: var(--surface); stroke: var(--ink); stroke-width: 2.5; }
+.bud-svg .mkt { fill: var(--ink); font-size: 13px; font-weight: 700; font-family: var(--font-num); }
+.bud-t { min-width: 520px; font-size: 14px; }
+.bud-t th, .bud-t td { padding: 9px 10px; }
+.bud-t th:first-child, .bud-t td:first-child { width: auto; max-width: none; }
+.bud-t tr.cur td { background: var(--accent-soft); font-weight: 700; }
+.bud-table-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.bud-table-col .scroll-x { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+.bud-note { font-size: 14px; line-height: 1.6; color: var(--ink); }
+.bud-note b { color: #C2410C; }
+.bud-foot { font-size: 12px; color: var(--muted); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bud-svg .inc, :root:not([data-theme="light"]) .bud-legend .lg-inc { stroke: #FF8A4C; border-color: #FF8A4C; } :root:not([data-theme="light"]) .bud-note b { color: #FF8A4C; } }
+:root[data-theme="dark"] .bud-svg .inc, :root[data-theme="dark"] .bud-legend .lg-inc { stroke: #FF8A4C; border-color: #FF8A4C; }
+:root[data-theme="dark"] .bud-note b { color: #FF8A4C; }
+@media (max-width: 1100px) { .bud-grid { grid-template-columns: minmax(0, 1fr); } }
+/* 용어 사전: 원리 아래 작은 토글 */
+.gloss { margin-top: 4px; }
+.gloss > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; padding: 4px 0; }
+.gloss > summary::-webkit-details-marker { display: none; }
+.gloss .gl-t { font-size: 14px; font-weight: 700; color: var(--ink); }
+.gloss .gl-t::before { content: "▸ "; color: var(--muted); }
+.gloss[open] .gl-t::before { content: "▾ "; }
+.click-txt { color: var(--accent); font-size: 14px; font-weight: 700; }
+.gloss > summary:hover .click-txt { text-decoration: underline; }
+.gloss .terms { margin-top: 10px; }
+.bud-t { min-width: 0 !important; width: 100%; }
+.mrow .mc:first-child { padding-left: 20px; }
+.mrow .mc:last-child { padding-right: 20px; }
+@media (max-width: 1400px) { .mrow .mc:nth-child(6n+1) { padding-left: 20px; } .mrow .mc:nth-child(6n) { padding-right: 20px; } }
+@media (max-width: 700px) { .mrow .mc { padding-left: 10px !important; padding-right: 10px !important; } .mrow .mc:nth-child(3n+1) { padding-left: 16px !important; } .mrow .mc:nth-child(3n) { padding-right: 16px !important; } }
+@media (max-width: 440px) { .mrow .mc:nth-child(odd) { padding-left: 16px !important; padding-right: 10px !important; } .mrow .mc:nth-child(even) { padding-right: 16px !important; padding-left: 10px !important; } }
+/* 내 광고 지표: 표처럼 위 회색 제목 줄 + 아래 값 줄. 안내 문장 줄은 숨김 */
+.now-left .mode-row { display: none; }
+#rawInputs.mrow .mc { padding: 0 !important; gap: 0; }
+#rawInputs.mrow .mc .nm { display: block; padding: 10px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); font-size: 14px; text-align: center; }
+#rawInputs.mrow .mc .in, #rawInputs.mrow .mc .mv { margin: 12px; }
+#rawInputs.mrow .mc .mv { text-align: right; line-height: 31px; }
+.path.b .b-col:last-child { flex-direction: row !important; flex-wrap: nowrap; align-items: center !important; }
+.path.b .b-col:last-child small { flex: none; }
+/* 5단계 ↔ 4단계 연결 */
+.bud-alt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; border: 1px dashed var(--line); border-radius: 10px; padding: 12px 16px; font-size: 14px; }
+.bud-alt.on { border: 1px solid #9ED9B6; background: var(--good-bg); }
+.bud-alt .ba-t { font-weight: 700; color: var(--ink); }
+.bud-alt .ba-c { color: var(--muted); font-size: 13px; }
+.bud-alt .ba-r { color: var(--ink); }
+.bud-alt .ba-r b { font-family: var(--font-num); font-size: 16px; }
+.bud-alt .ba-r b.up { color: var(--accent); }
+.bud-alt .ba-r b.down { color: var(--bad); }
+.bud-alt .ba-hint { color: var(--muted); font-size: 13px; }
+.bud-svg .avg1 { fill: none; stroke: var(--good); stroke-width: 3; stroke-dasharray: 8 5; }
+.bud-svg .mk1 { fill: var(--surface); stroke: var(--good); stroke-width: 2.5; }
+.bud-legend .lg-avg1 { border-top: 3px dashed var(--good); }
+.bud-cap { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: -4px; }
+/* 방법 A·B를 묶던 흰 박스 제거 (두 방법 상자만 흰 카드로) */
+.card.merged { background: none; border: 0; padding: 0; border-radius: 0; }
+.path { background: var(--surface); }
+/* 방법 B: 버튼은 제목 오른쪽 가로, 결과 앞에는 = 기호 */
+.b-head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.b-head-row .b-top-btns { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; margin: 0; }
+.b-head-row .b-top-btns .btn { width: auto; }
+.b-eq { align-self: center; justify-self: center; font-size: 22px; font-weight: 700; color: var(--good); line-height: 1; padding: 0 2px; }
+/* 방법 B 카드: '지금 1% → 목표값 [입력]' 한 줄 */
+.path.b .b-in { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; align-items: center !important; gap: 8px; }
+.path.b .b-in .ca { display: inline !important; line-height: 1; color: var(--faint); }
+.path.b .b-col { flex-direction: row !important; align-items: center !important; gap: 6px; flex: none; }
+.path.b .b-col small { min-width: 0 !important; font-size: 12px; }
+.path.b .b-now { line-height: 1.2 !important; font-size: 16px; white-space: nowrap; }
+.path.b .b-col:last-child { flex: 1 1 auto; min-width: 0; }
+.path.b .b-col:last-child .wi-tin { flex: 1 1 96px; max-width: 130px; min-width: 88px; }
+/* 방법 B 카드 폭: 숫자 긴 객단가·CPM 넓게, CTR·CVR 좁게 / 결과 카드 300px */
+.path.b .split { grid-template-columns: minmax(0, .85fr) auto minmax(0, .85fr) auto minmax(0, 1.1fr) auto minmax(0, 1.1fr) !important; }
+.b-main { grid-template-columns: minmax(0, 1fr) auto 300px; }
+@media (max-width: 1580px) { .b-main { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1250px) { .path.b .split { grid-template-columns: minmax(0, 1fr) !important; } .path.b .amp { justify-self: center; } }
+.way .w-how { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 13px; font-weight: 600; color: var(--muted); text-align: left; white-space: nowrap; }
+.rule h3 .rn { font-family: inherit; font-size: inherit; font-weight: 700; color: var(--accent); }
+.card.merged { margin-top: 18px; }
+/* 방법 A: '↳ 방법 설명'은 카드 밖 아래로 */
+.path .ways .way-wrap { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-width: max-content; }
+.path .ways .way-wrap .way { flex: 1 1 auto; min-width: 0; }
+.path .ways .way-wrap .w-how { margin: 0; padding: 0 4px; border-top: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+@media (max-width: 640px) { .path .ways .way-wrap { flex-basis: 100%; min-width: 0; } }
+/* 방법 B 카드 = 방법 A 카드와 같은 구성: [지금(라벨 위)/값] → [목표값(라벨 위)/노란 입력칸] */
+.path.b .b-in { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; align-items: flex-end !important; gap: 8px !important; }
+.path.b .b-col { display: flex; flex-direction: column !important; align-items: flex-start !important; gap: 2px; flex: none; }
+.path.b .b-col small { display: block; margin: 0; font-family: var(--font-body); font-size: 12px; font-weight: 500; color: var(--muted); }
+.path.b .b-now { font-family: var(--font-num); font-size: 16px !important; font-weight: 600; color: var(--muted); line-height: 34px !important; }
+.path.b .b-in .ca { display: inline !important; color: var(--faint); font-size: 16px; line-height: 34px; padding-bottom: 0; }
+.path.b .b-col:last-child { flex: 1 1 auto; min-width: 0; }
+.path.b .b-col:last-child .wi-tin { width: 100%; max-width: 140px; min-width: 96px; flex: none; }
+.path.b .wi-tin input { font-size: 16px; }
+.path.b .b-in .b-col:last-child { flex-direction: column !important; align-items: flex-start !important; gap: 2px; }
+.path.b .b-in .b-col:last-child .wi-tin { width: 120px; max-width: 120px; min-width: 0; }
+.path .ways .way-wrap .w-how { text-align: right; padding: 0 22px 0 0; }
+.rule > .eq { margin-top: 6px; }
+/* 방법 B: 카드 제목은 왼쪽, '지금 → 목표값'만 가운데 / 결과 카드는 글자 줄바꿈 없이 내용 폭만큼 */
+.path.b .b-in { justify-content: center !important; }
+.path.b .b-in .b-col:last-child { flex: none !important; }
+@media (min-width: 1581px) { .b-main { grid-template-columns: minmax(0, 1fr) auto max-content; } .b-main .wi-res, .b-main .wi-res * { white-space: nowrap; } }
+.b-main .wi-sub > span { gap: 16px; }
+.q-read { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-size: 13px; line-height: 1.6; color: var(--ink); }
+.q-read b { color: var(--accent); margin-right: 6px; }
+.q-read .q-num { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-family: var(--font-num); font-size: 13px; color: var(--muted); }
+/* 방법 B 카드: 어떤 화면·글꼴에서도 카드 밖으로 안 나가게 — 공간이 모자라면 '목표값'이 다음 줄로 */
+.path.b .srow { min-width: 0; overflow-wrap: anywhere; }
+.path.b .b-in { flex-wrap: wrap !important; row-gap: 6px; min-width: 0; max-width: 100%; }
+.path.b .b-in .b-col { min-width: 0; }
+.path.b .b-in .b-col:last-child .wi-tin { max-width: 100%; }
+.path.b .srow .b-head { min-width: 0; }
+.path.b .srow .b-head small { white-space: normal; }
+.path.b .b-in .b-col:last-child { width: auto !important; }
+.path.b .b-in .b-col:last-child .wi-tin { width: 112px !important; max-width: 100% !important; }
+.path.b .split { grid-template-columns: minmax(0, 1.05fr) auto minmax(0, .95fr) auto minmax(0, .95fr) auto minmax(0, 1.05fr) !important; }
+@media (max-width: 1250px) { .path.b .split { grid-template-columns: minmax(0, 1fr) !important; } }
+/* 4단계 오른쪽: 퍼널 */
+#results:empty { display: none; }
+.fn-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.fn-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.fn-legend i { width: 14px; height: 8px; border-radius: 3px; display: inline-block; }
+.fn-legend i.now { background: var(--line); }
+.fn-legend i.aft { background: var(--accent); }
+.fn-legend .fn-hint { margin-left: auto; font-size: 12px; }
+.fn-stage { display: grid; grid-template-columns: 56px minmax(0, 1fr) 190px; align-items: center; gap: 12px; padding: 6px 0; }
+.fn-lb { font-size: 14px; font-weight: 700; color: var(--ink); }
+.fn-bars { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.fn-bar { height: 12px; border-radius: 4px; min-width: 4px; transition: width .2s ease; }
+.fn-bar.now { background: var(--line); }
+.fn-bar.aft { background: var(--accent); }
+.fn-v { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.fn-v b { font-family: var(--font-num); font-size: 16px; color: var(--ink); white-space: nowrap; }
+.fn-v small { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.fn-v em { font-style: normal; font-weight: 700; }
+.fn-v em.up { color: var(--accent); }
+.fn-v em.down { color: var(--bad); }
+.fn-op { display: grid; grid-template-columns: 56px minmax(0, 1fr) 190px; gap: 12px; }
+.fn-op .fn-pill { grid-column: 2; justify-self: center; font-size: 13px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; white-space: nowrap; font-family: var(--font-num); }
+.fn-op .fn-pill.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.fn-op .fn-pill.eff { background: #FFF1E6; border-color: #F5B98A; color: #C2410C; font-weight: 700; }
+.fn-op .fn-pill i { font-style: normal; font-family: var(--font-body); font-size: 11px; margin-left: 4px; }
+.fn-roas { margin-top: 12px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; border-radius: 10px; padding: 12px 16px; border: 1px solid var(--accent); background: var(--accent-soft); }
+.fn-roas span { font-size: 14px; font-weight: 700; color: var(--ink); }
+.fn-roas b { font-family: var(--font-num); font-size: 16px; color: var(--accent); }
+.fn-roas small { font-size: 13px; color: var(--muted); font-weight: 600; }
+.fn-roas.down { border-color: var(--bad); background: var(--bad-bg); }
+.fn-roas.down b { color: var(--bad); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .fn-op .fn-pill.eff { background: #3A2414; border-color: #7A4A22; color: #FFB27A; } }
+:root[data-theme="dark"] .fn-op .fn-pill.eff { background: #3A2414; border-color: #7A4A22; color: #FFB27A; }
+@media (max-width: 640px) { .fn-stage, .fn-op { grid-template-columns: 48px minmax(0, 1fr) 128px; gap: 8px; } .fn-legend .fn-hint { margin-left: 0; } .fn-op .fn-pill { white-space: normal; text-align: center; } }
+@media (max-width: 640px) { .fn-op .fn-pill { grid-column: 1 / -1; border-radius: 10px; padding: 4px 10px; } }
+.fn-bars { align-items: flex-start; }
+.fn-op .fn-pill { justify-self: start; }
+@media (max-width: 640px) { .fn-op .fn-pill { justify-self: stretch; } }
+.fn-bars.rev { position: relative; }
+.fn-bars.rev .fn-bar.aft { background: var(--good); }
+.fn-mark { position: absolute; top: -6px; bottom: -6px; width: 0; border-left: 2px dashed var(--ink); opacity: 0.6; }
+.fn-mark i { position: absolute; top: 100%; left: 0; transform: translateX(-50%); font-style: normal; font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; margin-top: 1px; }
+.fn-legend i.rev { background: var(--good); }
+/* 퍼널 색 의미 단순화: 회색=지금, 파랑=바꾼 후(매출 포함), 알약은 글자 태그로 구분 */
+.fn-bars.rev .fn-bar.aft { background: var(--accent); }
+.fn-legend { font-size: 13px; color: var(--ink); font-weight: 600; gap: 6px 20px; }
+.fn-legend i { width: 18px; height: 10px; }
+.fn-legend i.dash { width: 0; height: 14px; border-left: 2px dashed var(--ink); border-radius: 0; opacity: 0.6; background: none; }
+.fn-op .fn-pill .tag { font-style: normal; font-family: var(--font-body); font-size: 11px; font-weight: 700; margin-left: 6px; padding: 1px 6px; border-radius: 999px; color: #fff; }
+.fn-op .fn-pill .tag.mine { background: var(--accent); }
+.fn-op .fn-pill .tag.eff { background: #E8590C; }
+.diag-basis { margin-left: auto; align-self: center; flex: none; font-size: 13px; color: var(--ink); background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 999px; padding: 6px 14px; white-space: nowrap; font-family: var(--font-num); }
+.diag-basis b { font-family: var(--font-body); color: var(--accent); margin-right: 6px; }
+@media (max-width: 1100px) { .diag-basis { white-space: normal; margin-left: 0; flex-basis: 100%; border-radius: 10px; } }
+@media (max-width: 1100px) { .step-head { flex-wrap: wrap; } }
+/* 4단계 퍼널: 가로로 늘어지지 않게 — 퍼널(왼쪽) + 해석(오른쪽) */
+.fn-wrap { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.fn-stage, .fn-op { grid-template-columns: 52px minmax(0, 1fr) 150px; gap: 10px; }
+.fn-v { align-items: flex-start; text-align: left; }
+.fn-legend { flex-direction: column; align-items: flex-start; gap: 4px; }
+.fn-side { border-left: 1px solid var(--line); padding-left: 20px; }
+.fn-side-t { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+.fn-side .msgs { margin-top: 0; }
+@media (max-width: 1300px) { .fn-wrap { grid-template-columns: minmax(0, 1fr); } .fn-side { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 14px; } }
+@media (max-width: 640px) { .fn-stage, .fn-op { grid-template-columns: 48px minmax(0, 1fr) 118px; gap: 8px; } }
+.fn-stage, .fn-op { grid-template-columns: 52px minmax(0, 1fr) 168px; }
+.fn-v small { white-space: normal; }
+@media (max-width: 640px) { .fn-stage, .fn-op { grid-template-columns: 48px minmax(0, 1fr) 120px; } }
+.hl-blue { color: var(--accent); font-weight: 700; }
+@media (min-width: 961px) { .play { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); } }
+#fnRoas .fn-roas { margin: 0 0 10px; }
+@media (min-width: 961px) { .lv-row { grid-template-columns: minmax(0, 1fr) 142px; } }
+@media (max-width: 960px) { .lv-row { grid-template-columns: minmax(0, 1fr) 136px; } }
+/* 4단계 슬라이더: 지표 이름 | 슬라이더 | 입력칸 한 줄 */
+@media (min-width: 961px) { .play { grid-template-columns: minmax(340px, 430px) minmax(0, 1fr); } }
+#levers > div { display: grid; grid-template-columns: 78px minmax(0, 1fr); column-gap: 10px; row-gap: 0; align-items: center; }
+#levers > div > .lv-top { grid-column: 1; grid-row: 1; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; }
+#levers > div > .lv-top b { font-size: 14px; line-height: 1.25; }
+#levers > div > .lv-top .chg { font-size: 12px; }
+#levers > div > .lv-row { grid-column: 2; grid-row: 1; margin-top: 0; }
+#levers > div > .lv-sub { grid-column: 2; grid-row: 2; margin-top: 0; }
+@media (max-width: 400px) { #levers > div { grid-template-columns: 64px minmax(0, 1fr); } }
+/* 4단계 하단: 현실 반영 체크 + 되돌리기 버튼 한 행 */
+.lv-foot { display: flex; align-items: stretch; gap: 8px; }
+.lv-foot .real { flex: 1 1 auto; min-width: 0; align-items: center; padding: 8px 10px; font-size: 13px; }
+.lv-foot .real input { margin-top: 0; }
+.lv-foot .btn { flex: none; white-space: nowrap; }
+@media (max-width: 400px) { .lv-foot { flex-wrap: wrap; } .lv-foot .btn { flex: 1 1 100%; } }
+/* 휴대폰: 슬라이더가 너무 좁아지지 않게 이름은 위로 */
+@media (max-width: 640px) {
+  #levers > div { grid-template-columns: minmax(0, 1fr); }
+  #levers > div > .lv-top { grid-column: 1; grid-row: 1; flex-direction: row; justify-content: space-between; align-items: baseline; }
+  #levers > div > .lv-row { grid-column: 1; grid-row: 2; margin-top: 4px; }
+  #levers > div > .lv-sub { grid-column: 1; grid-row: 3; }
+}
+/* 범례: 오른쪽 '이렇게 바뀌어요' 칸 맨 아래 */
+.fn-wrap { align-items: stretch; }
+.fn-side { display: flex; flex-direction: column; }
+.fn-legend-side { margin: auto 0 0; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.fn-op .fn-pill i, .fn-op .fn-pill .tag { white-space: nowrap; display: inline-block; }
+/* 노란 칸 표시(설명 문장 안) */
+.yl-chip { display: inline-block; background: var(--input); border: 1px solid var(--input-line); color: var(--input-ink); border-radius: 6px; padding: 0 7px; font-weight: inherit; line-height: 1.5; }
+/* 퍼널 알약 = 왼쪽 슬라이더 지표: 입력칸과 같은 노란 바탕 + 슬라이더 아이콘 */
+.fn-op .fn-pill { background: var(--input) !important; border: 1px solid var(--input-line) !important; color: var(--input-ink) !important; font-family: var(--font-num); line-height: 1.5; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center; transition: box-shadow .15s, border-color .15s; }
+.fn-op .fn-pill.on { border-color: var(--accent) !important; font-weight: 700; }
+.fn-op .fn-pill.eff { border-color: #F5B98A !important; font-weight: 700; }
+.fn-op .fn-pill.link-hi, .fn-op .fn-pill:focus-visible { border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4px var(--accent); outline: none; }
+#levers > div { border-radius: 8px; transition: background-color .15s, box-shadow .15s; }
+#levers > div.link-hi { background: var(--accent-soft); box-shadow: 0 0 0 6px var(--accent-soft); }
+@keyframes linkFlash { 0%, 60% { background: var(--accent-soft); box-shadow: 0 0 0 6px var(--accent-soft), 0 0 0 7px var(--accent); } 100% { box-shadow: 0 0 0 6px transparent; } }
+#levers > div.link-flash { animation: linkFlash 1.2s ease-out; }
+.fn-legend i.pill { background: var(--input); border: 1px solid var(--input-line); border-radius: 999px; width: 18px; height: 10px; }
+/* 내 광고 지표 표: 숫자 가운데 정렬 */
+#rawInputs.mrow .mc .mv, #rawInputs.mrow .mc .in input { text-align: center !important; }
+#rawInputs.mrow .mc .mv { justify-self: center; }
+/* 슬라이더: 광고비와 나머지 지표 구분선 */
+#levers > div[data-k="spend"] { padding-bottom: 14px; border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }
+/* 최상단 제목과 1단계 사이 여백 */
+.wrap > header { margin-bottom: 24px; }
+/* 4단계 슬라이더 (시안 C): 얇은 파스텔 노랑 채움선 + 흰 손잡이(16px) */
+:root { --slider: #FFE680; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --slider: #FFF1B0; } }
+:root[data-theme="dark"] { --slider: #FFF1B0; }
+.lv-row input[type="range"] { -webkit-appearance: none; appearance: none; height: 26px; background: transparent; cursor: pointer; }
+.lv-row input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(to right, var(--slider) 0 var(--f, 50%), var(--line) var(--f, 50%) 100%); }
+.lv-row input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%; background: #fff; border: 1px solid rgba(0, 0, 0, .16); box-shadow: 0 1px 2px rgba(0, 0, 0, .1); transition: transform .12s ease; }
+.lv-row input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.06); }
+.lv-row input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.1); }
+.lv-row input[type="range"]::-moz-range-track { height: 4px; border-radius: 999px; background: var(--line); }
+.lv-row input[type="range"]::-moz-range-progress { height: 4px; border-radius: 999px; background: var(--slider); }
+.lv-row input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 1px solid rgba(0, 0, 0, .16); box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
+.lv-row input[type="range"]:focus { outline: none; }
+.lv-row input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4px var(--accent); }
+/* 퍼널: 오른쪽 설명이 길어지면 그 높이에 맞춰 단계 간격을 고르게 벌림 (나란히 놓일 때만) */
+@media (min-width: 1301px) { .fn-wrap > .funnel { justify-content: space-between; } }
+/* 슬라이더 '지금' 기준선: 가늘고 연하고 짧게 */
+.lv-row .rng-now { top: 6px; bottom: auto; height: 14px; width: 1px; margin-left: -0.5px; background: var(--muted); opacity: .45; }
+.lv-row .rng-now i { opacity: 1; }
+/* 2단계 내 광고 지표 표 오른쪽 위: 예시 숫자로 초기화 */
+.step-head .raw-tools { margin-left: auto; align-self: flex-end; flex: none; }
+@media (max-width: 640px) { .step-head .raw-tools { width: 100%; display: flex; justify-content: flex-end; } }
+.raw-tools .btn.armed { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">광고비가 매출이 되기까지</p>
+    <h1>광고 지표 시뮬레이터</h1>
+    <p>원리 4가지를 먼저 읽고 아래 시뮬레이션에서 <span class="yl-chip">노란 칸</span>의 숫자를 바꿔 보세요. 어떤 지표가 결과를 얼마나 움직이는지 바로 보입니다.</p>
+  </header>
+
+  <!-- 1. 원리 -->
+  <section class="step">
+    <div class="step-head"><span class="step-no">1</span><div class="h-with-click"><h2>꼭 알아야 할 원리 4가지</h2><button type="button" class="click-all" id="rulesAll" aria-expanded="false">click!</button></div></div>
+    <div class="rules">
+      <div class="card rule">
+        <h3><span class="rn">1.</span> ROAS를 올리는 방법은 네 가지뿐입니다</h3>
+        <span class="eq"><span class="eq-t">ROAS = CTR × CVR × 객단가 ÷ CPM</span><button type="button" class="eq-tog" aria-label="자세한 설명 열기" aria-expanded="false">▾</button></span>
+        <details class="rule-more"><summary>자세히 보기</summary><div class="rm-body">
+          <ul class="ways4">
+            <li><b>CTR</b> 더 많이 누르게 하기</li>
+            <li><b>CVR</b> 더 많이 사게 하기</li>
+            <li><b>객단가</b> 더 비싸게 팔기</li>
+            <li><b>CPM</b> 더 싸게 보여주기</li>
+          </ul>
+          <p>광고비는 이 식에 없어서, 광고비만 늘려서는 ROAS가 오르지 않습니다.</p>
+        </div></details>
+      </div>
+      <div class="card rule">
+        <h3><span class="rn">2.</span> 예산을 늘리면 효율은 보통 떨어집니다</h3>
+        <span class="eq"><span class="eq-t">광고비 2배 ≠ 매출 2배</span><button type="button" class="eq-tog" aria-label="자세한 설명 열기" aria-expanded="false">▾</button></span>
+        <details class="rule-more"><summary>자세히 보기</summary><div class="rm-body">
+          <div class="ex">
+            <div><b>A 지금 · 광고비 1,000만 원</b><span class="tgt">ROAS 100%</span>매출 1,000만 원</div>
+            <div><b>B 예산 2배 · 광고비 2,000만 원</b><span class="tgt">ROAS 약 79%</span>매출 2,000만 원이 아니라 약 1,570만 원<br>늘린 1,000만 원이 번 돈은 570만 원뿐 (늘린 돈의 ROAS 57%)</div>
+          </div>
+          <p><b>왜 떨어질까요?</b></p>
+          <ul class="ways4 why">
+            <li><b>CPM ↑</b> 좋은 자리는 이미 샀으니, 남은 노출은 더 비싸게 사야 해요</li>
+            <li><b>CTR ↓</b> 같은 사람에게 반복해서 보여주면 덜 눌러요</li>
+            <li><b>CVR ↓</b> 관심이 덜한 사람에게까지 닿아서 덜 사요</li>
+          </ul>
+          <p>그래서 증액할 때는 평균 ROAS보다 <b>늘린 돈의 ROAS</b>를 봐야 해요.</p>
+        </div></details>
+      </div>
+      <div class="card rule">
+        <h3><span class="rn">3.</span> CPM이 오르면 CTR 목표값도 같이 올라갑니다</h3>
+        <span class="eq"><span class="eq-t">20% 비싸게 보여주면 → 반응도 20% 더 좋아야 본전</span><button type="button" class="eq-tog" aria-label="자세한 설명 열기" aria-expanded="false">▾</button></span>
+        <details class="rule-more"><summary>자세히 보기</summary><div class="rm-body">
+          <div class="ex">
+            <div><b>A 캠페인 · CPM 10,000원</b><span class="tgt">이상적 CTR 1.0%</span>1,000번 노출 중 10명 클릭 → 클릭 1번에 1,000원</div>
+            <div><b>B 캠페인 · CPM 12,000원 (20% 비쌈)</b><span class="tgt">이상적 CTR 1.2%</span>지금은 10명 클릭(1.0%) → 클릭 1번에 1,200원<br>12명이 눌러야(1.2%) 클릭 1번에 1,000원으로 A와 같아져요</div>
+          </div>
+          <p>둘 다 CTR 1%여도 B는 클릭을 20% 비싸게 사고 있어요. 클릭이 모자라면 구매(CVR)를 20% 더 받아도 됩니다.</p>
+          <p>그래서 CPM이 다른 캠페인을 CTR 하나로 비교하면 판단이 틀릴 수 있어요.</p>
+        </div></details>
+      </div>
+      <div class="card rule">
+        <h3><span class="rn">4.</span> CPM이 비싸면 CVR로 갚아야 합니다</h3>
+        <span class="eq"><span class="eq-t">CPM 2배 (CTR 그대로) → CVR도 2배여야 본전</span><button type="button" class="eq-tog" aria-label="자세한 설명 열기" aria-expanded="false">▾</button></span>
+        <details class="rule-more"><summary>자세히 보기</summary><div class="rm-body">
+          <div class="ex">
+            <div><b>A 넓은 타겟 · CPM 5,000원</b><span class="tgt">이상적 CVR 1%</span>CTR 1% → 클릭 1번에 500원<br>CVR 1%면 구매 1건에 50,000원</div>
+            <div><b>B 구매 의향 높은 타겟 · CPM 10,000원 (2배)</b><span class="tgt">이상적 CVR 2%</span>CTR 1% → 클릭 1번에 1,000원<br>CVR 2%여야 구매 1건에 50,000원으로 A와 같아져요</div>
+          </div>
+          <p>CTR이 같으면 CPM이 오른 만큼 클릭이 비싸지고, 그 차이는 <b>CVR</b>이 메워야 해요.</p>
+          <p>그래서 CPM이 높다고 바로 나쁜 캠페인은 아니에요. 리타겟팅·관심사 타겟처럼 비싼 대신 잘 사는 사람에게 보여주는 경우가 많아요. <b>CPM이 오른 만큼 CVR도 올랐는지</b> 같이 보세요. 반대로 CPM이 싸도 CVR이 더 많이 떨어지면 손해예요.</p>
+        </div></details>
+      </div>
+    </div>
+    <details class="gloss">
+      <summary><span class="gl-t">용어 사전</span><span class="click-txt">click!</span></summary>
+      <div class="terms">
+      <div class="term"><b>CPM</b><span>광고를 1,000번 보여주는 데 드는 돈</span><code>광고비 ÷ 노출수 × 1,000</code></div>
+      <div class="term"><b>노출수</b><span>광고가 보여진 횟수</span><code>광고비 ÷ CPM × 1,000</code></div>
+      <div class="term"><b>CTR</b><span>광고를 본 사람 중 누른 비율 (클릭률)</span><code>클릭수 ÷ 노출수</code></div>
+      <div class="term"><b>클릭수</b><span>광고를 누른 횟수</span><code>노출수 × CTR</code></div>
+      <div class="term"><b>CPC</b><span>클릭 1번에 드는 돈</span><code>광고비 ÷ 클릭수</code></div>
+      <div class="term"><b>CVR</b><span>누른 사람 중 구매한 비율 (전환율)</span><code>전환수 ÷ 클릭수</code></div>
+      <div class="term"><b>전환수</b><span>광고를 누르고 구매까지 한 횟수</span><code>클릭수 × CVR</code></div>
+      <div class="term"><b>CPA</b><span>구매 1건을 만드는 데 든 광고비</span><code>광고비 ÷ 전환수</code></div>
+      <div class="term"><b>객단가</b><span>구매 1건의 평균 금액</span><code>매출 ÷ 전환수</code></div>
+      <div class="term"><b>ROAS</b><span>광고비 대비 매출. 100%면 쓴 만큼 벌었다는 뜻</span><code>매출 ÷ 광고비</code></div>
+    </div>
+    </details>
+  </section>
+
+  <!-- 2. 지금 숫자 + 목표 ROAS -->
+  <section class="step">
+    <div class="step-head"><span class="step-no">2</span><div><h2>목표 ROAS까지 가는 두 가지 방법</h2><p>내 광고 숫자와 목표 ROAS를 넣으면, 같은 광고비로 목표까지 가는 길을 두 가지로 보여줘요.</p></div><div class="raw-tools"><button type="button" class="btn" id="resetSample">예시 숫자로 초기화</button></div></div>
+    <div class="now-left">
+      <div class="mode-row">
+        <span class="mode-hint" id="modeHint"></span>
+      </div>
+      <div class="mrow" id="rawInputs"></div>
+      <div class="inputs cellgrid" id="curInputs"></div>
+    </div>
+    <div class="card merged">
+      <div class="paths" id="paths">
+        <div class="path" id="pathA">
+          <p class="opt-title"><span class="opt-tag">방법 A</span>목표 ROAS <span class="in goal-in goal-inline"><input id="goal2" inputmode="decimal" aria-label="목표 ROAS"><span class="u">%</span></span>에서 역산한 지표별 목표값</p>
+          <p class="path-s" id="aSum"></p>
+          <div class="ways" id="ways"></div>
+        </div>
+        <div class="path b">
+          <div class="b-head-row"><p class="opt-title"><span class="opt-tag b">방법 B</span>여러 지표를 함께 조율하기</p>
+            <div class="wi-btns b-top-btns">
+              <button type="button" class="btn" id="wiFromB">균등 분배로</button>
+              <button type="button" class="btn" id="wiReset">지금 값으로 되돌리기</button>
+            </div></div>
+          <p class="path-s">처음엔 CTR·CVR·객단가를 똑같이 나눈 값이 들어가 있어요. 노란 칸의 <b>목표값</b>을 바꿔 어디를 얼마나 올릴지 직접 조율해 보세요. 지표들이 서로 곱해져서, 작은 개선이 모이면 큰 개선 하나와 같은 효과를 내요.</p>
+          <div class="b-main">
+            <div class="split" id="wiRows"></div>
+            <span class="b-eq" aria-hidden="true">=</span>
+            <div class="wi-res" id="wiRes"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 진단: 조합 해석 + 히트맵 -->
+  <section class="step">
+    <div class="step-head"><span class="step-no">3</span><div><h2>지금 지표 진단하기</h2><p><b class="hl-blue">2번 방법B에서 정한 목표 CTR·CVR·CPM과 비교</b>해 지금 지표 조합이 어떤 상태인지, CPM·CVR에 따라 CTR 목표값이 어떻게 달라지는지 봐요.</p></div></div>
+    <div class="card diag3">
+      <div class="quads" id="quads"></div>
+      <div class="heat-col">
+        <p class="qt">CPM × CVR별 필요 최소 CTR</p>
+        <div class="heat-wrap">
+          <div class="scroll-x" id="heat"></div>
+          <div class="heat-legend"><span><i class="ok"></i>통과</span><span><i class="near"></i>조금 부족 (20% 이내)</span><span><i class="no"></i>미달</span><span><i class="cur"></i>지금 위치</span><span><i class="tgt"></i>가장 가까운 통과</span></div>
+        </div>
+        <p class="heat-go" id="heatGo"></p>
+        <p class="heat-note2" id="heatNote"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. 바꿔보기 -->
+  <section class="step">
+    <div class="step-head"><span class="step-no">4</span><div><h2>예산을 바꾸면?</h2><p>광고비와 지표를 슬라이더로 움직여 보세요. 예산을 늘리면 효율이 어떻게 달라지는지까지 반영해 결과를 보여줘요.</p></div></div>
+    <div class="play">
+      <div class="card levers">
+        <div id="levers" class="levers"></div>
+        <div class="lv-foot"><label class="real"><input type="checkbox" id="real"><span>증액 시 효율 저하 반영</span></label><button type="button" class="btn" id="resetAft">처음 숫자로 되돌리기</button></div>
+      </div>
+      <div class="card">
+        <div class="fn-wrap">
+          <div class="funnel" id="funnel"></div>
+          <div class="fn-side"><p class="fn-side-t">이렇게 바뀌어요</p><div id="fnRoas"></div><div class="msgs" id="msgs"></div><div class="fn-legend fn-legend-side"><span><i class="now"></i>회색 막대 = 지금</span><span><i class="aft"></i>파란 막대 = 예상치</span><span><i class="pill"></i>노란 알약 = 왼쪽 슬라이더로 바꾸는 지표 (누르면 이동)</span><span><i class="dash"></i>점선 = 예상 광고비 (매출 막대가 넘으면 ROAS 100% 이상)</span></div></div>
+        </div>
+        <div class="results" id="results"></div>
+      </div>
+    </div>
+    <div class="card scen-card">
+      <h3 class="sub-h">시나리오 비교표</h3>
+      <div class="scroll-x"><table class="scen" id="scen"></table></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>입력한 숫자는 이 브라우저에만 저장됩니다.</span>
+    <span class="credit">Performance Marketing Metrics Simulator · <span style="white-space:nowrap">김유정 · 2026</span></span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const div = (a, b) => (b ? a / b : 0);
+
+  /* ---------- 계산 ---------- */
+  function calc(d) {
+    const imp = div(d.spend, d.cpm) * 1000, clicks = imp * d.ctr, conv = clicks * d.cvr, rev = conv * d.aov;
+    return Object.assign({}, d, { imp, clicks, conv, rev, cpc: div(d.spend, clicks), cpa: div(d.spend, conv), roas: div(rev, d.spend) });
+  }
+  // 예산 효율 저하 ('보통'): 광고비 k배 → CPM k^0.15, CTR k^-0.07, CVR k^-0.13. 감액 시 효과는 절반
+  function budgetEffect(k) {
+    const f = k >= 1 ? 1 : 0.5;
+    return { cpm: Math.pow(k, 0.15 * f), ctr: Math.pow(k, -0.07 * f), cvr: Math.pow(k, -0.13 * f) };
+  }
+
+  /* ---------- 표시 ---------- */
+  const won = (v) => (isNum(v) ? Math.round(v).toLocaleString('ko-KR') + '원' : '–');
+  const cnt = (v, u) => (isNum(v) ? (v < 100 ? (Math.round(v * 10) / 10).toLocaleString('ko-KR') : Math.round(v).toLocaleString('ko-KR')) + u : '–');
+  const pct = (v) => (isNum(v) ? +(v * 100).toFixed(2) + '%' : '–');
+  const roas = (v) => (isNum(v) ? (v * 100).toFixed(1) + '%' : '–'); // ROAS는 어디서나 소수점 한 자리
+  const chg = (r) => (!isNum(r) || Math.abs(r) < 0.0005 ? '–' : (r > 0 ? '+' : '') + (r * 100).toFixed(1) + '%');
+  const tone = (r, dir) => (!isNum(r) || Math.abs(r) < 0.0005 || !dir ? 'flat' : r * dir > 0 ? 'up' : 'down');
+
+  const K = {
+    spend: { nm: '광고비', ds: '이번 기간에 쓴 광고비', kind: 'won', fmt: won, dir: 0 },
+    cpm:   { nm: 'CPM', ds: '광고를 1,000번 보여주는 데 드는 돈. 낮을수록 좋아요', kind: 'won', fmt: won, dir: -1 },
+    ctr:   { nm: 'CTR', ds: '광고를 본 100명 중 몇 명이 눌렀나', kind: 'pct', fmt: pct, dir: 1 },
+    cvr:   { nm: 'CVR', ds: '광고를 누른 100명 중 몇 명이 샀나', kind: 'pct', fmt: pct, dir: 1 },
+    aov:   { nm: '객단가', ds: '한 번 살 때 평균 결제 금액', kind: 'won', fmt: won, dir: 1 }
+  };
+  const KEYS = ['spend', 'cpm', 'ctr', 'cvr', 'aov'];
+  const BKEYS = ['ctr', 'cvr', 'cpm'];
+  // 절대 수치(원천 데이터) 입력칸
+  const RAW = {
+    spend:  { nm: '광고비', ds: '보고서의 비용', kind: 'won', u: '원' },
+    imp:    { nm: '노출수', ds: '광고가 보여진 횟수', kind: 'won', u: '회' },
+    clicks: { nm: '클릭수', ds: '광고를 누른 횟수', kind: 'won', u: '회' },
+    conv:   { nm: '전환수', ds: '구매(전환) 건수', kind: 'won', u: '건' },
+    rev:    { nm: '매출액', ds: '보고서의 전환 가치', kind: 'won', u: '원' }
+  };
+  const RKEYS = ['spend', 'imp', 'clicks', 'conv', 'rev'];
+  const kindOf = (g, k) => (g === 'raw' ? RAW[k].kind : K[k].kind);
+  const rawFromCur = (c) => { const imp = div(c.spend, c.cpm) * 1000, clicks = imp * c.ctr, conv = clicks * c.cvr; return { spend: c.spend, imp, clicks, conv, rev: conv * c.aov }; };
+  const curFromRaw = (r) => ({ spend: r.spend, cpm: div(r.spend, r.imp) * 1000, ctr: div(r.clicks, r.imp), cvr: div(r.conv, r.clicks), aov: div(r.rev, r.conv) });
+
+  function toText(v, kind) {
+    if (!isNum(v)) return '';
+    if (kind === 'won') return Math.round(v).toLocaleString('ko-KR');
+    if (kind === 'pct') return String(+(v * 100).toFixed(2));
+    return String(+(v * 100).toFixed(1));
+  }
+  function parse(t, kind) {
+    const s = String(t).replace(/[^0-9.]/g, '');
+    if (!s || s === '.') return NaN;
+    const v = parseFloat(s);
+    return kind === 'won' ? v : v / 100;
+  }
+
+  /* ---------- 상태 ---------- */
+  const SAMPLE = { spend: 10000000, cpm: 10000, ctr: 0.01, cvr: 0.02, aov: 50000 };
+  const KEY = 'ad-sim-basic-v2';
+  let hadWi = false;
+  let S = { cur: Object.assign({}, SAMPLE), aft: Object.assign({}, SAMPLE), real: true, goal: 1.3, bench: { ctr: 0.008, cvr: 0.025, cpm: 9000 }, mode: 'raw', raw: rawFromCur(SAMPLE), wi: { ctr: 10, cvr: 0, aov: 0, cpm: 0 } };
+  try {
+    const sv = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (sv && sv.cur && sv.aft) {
+      KEYS.forEach((k) => { if (isNum(sv.cur[k])) S.cur[k] = sv.cur[k]; if (isNum(sv.aft[k])) S.aft[k] = sv.aft[k]; });
+      S.raw = rawFromCur(S.cur);
+      if (sv.raw && sv.mode !== 'rate') RKEYS.forEach((k) => { if (isNum(sv.raw[k])) S.raw[k] = sv.raw[k]; });
+      S.mode = 'raw'; // 입력은 절대 수치 하나로 통일
+      if (sv.bench) BKEYS.forEach((k) => { if (isNum(sv.bench[k])) S.bench[k] = sv.bench[k]; });
+      if (typeof sv.real === 'boolean') S.real = sv.real;
+      if (isNum(sv.goal)) S.goal = sv.goal;
+      if (sv.wi) { hadWi = true; ['ctr', 'cvr', 'aov', 'cpm'].forEach((k) => { if (isNum(sv.wi[k])) S.wi[k] = sv.wi[k]; }); }
+    }
+  } catch (_) {}
+  let t = null;
+  const save = () => { clearTimeout(t); t = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (_) {} }, 300); };
+
+  /* ---------- 화면 만들기 (한 번) ---------- */
+  const unit = (k) => (K[k].kind === 'won' ? '원' : '%');
+  $('#curInputs').innerHTML = KEYS.map((k) =>
+    '<div class="fld"><label class="nm" for="cur-' + k + '">' + K[k].nm + '</label><span class="ds">' + K[k].ds + '</span>' +
+    '<span class="in"><input id="cur-' + k + '" data-g="cur" data-k="' + k + '" inputmode="decimal"><span class="u">' + unit(k) + '</span></span>' +
+    '<span class="calc" id="ccalc-' + k + '"></span></div>').join('');
+  const MROW = [
+    ['in', 'spend'], ['in', 'imp'], ['out', 'cpm', 'CPM', '광고비 ÷ 노출수 × 1,000'],
+    ['in', 'clicks'], ['out', 'ctr', 'CTR', '클릭수 ÷ 노출수'], ['out', 'cpc', 'CPC', '광고비 ÷ 클릭수'],
+    ['in', 'conv'], ['out', 'cvr', 'CVR', '전환수 ÷ 클릭수'], ['out', 'cpa', 'CPA', '광고비 ÷ 전환수'],
+    ['in', 'rev'], ['out', 'aov', '객단가', '매출액 ÷ 전환수'], ['out', 'roas', '현재 ROAS', '매출액 ÷ 광고비']
+  ];
+  $('#rawInputs').innerHTML = MROW.map((m) => m[0] === 'in'
+    ? '<div class="mc mc-in"><label class="nm" for="raw-' + m[1] + '">' + RAW[m[1]].nm + ' <small>(' + RAW[m[1]].u + ')</small></label>' +
+      '<span class="in"><input id="raw-' + m[1] + '" data-g="raw" data-k="' + m[1] + '" inputmode="decimal"></span></div>'
+    : '<div class="mc mc-out"><span class="nm">' + m[2] + '</span><span class="mv" id="mv-' + m[1] + '"></span></div>').join('');
+  $('#levers').innerHTML = KEYS.map((k) =>
+    '<div data-k="' + k + '"><div class="lv-top"><b>' + K[k].nm + '</b></div>' +
+    '<div class="lv-row"><span class="rng-wrap" style="--p:' + (50 / ((k === 'spend' ? 200 : 100) + 50)) + '"><input type="range" id="rng-' + k + '" data-k="' + k + '" min="-50" max="' + (k === 'spend' ? 200 : 100) + '" step="1" aria-label="' + K[k].nm + ' 변화율"><span class="rng-now" aria-hidden="true">' + (k === 'spend' ? '<i>지금</i>' : '') + '</span></span>' +
+    '<span class="in"><input id="aft-' + k + '" data-g="aft" data-k="' + k + '" inputmode="decimal" aria-label="바꾼 ' + K[k].nm + '"><span class="u">' + unit(k) + '</span></span></div>' +
+    '</div>').join('');
+
+  /* ---------- 그리기 ---------- */
+  function effective() {
+    const k = div(S.aft.spend, S.cur.spend) || 1;
+    const e = S.real ? budgetEffect(k) : { cpm: 1, ctr: 1, cvr: 1 };
+    return { d: { spend: S.aft.spend, cpm: S.aft.cpm * e.cpm, ctr: S.aft.ctr * e.ctr, cvr: S.aft.cvr * e.cvr, aov: S.aft.aov }, e, k };
+  }
+
+  function render() {
+    // 입력칸 값 동기화 (입력 중인 칸은 건드리지 않음)
+    document.querySelectorAll('input[data-g]').forEach((el) => {
+      if (el === document.activeElement) return;
+      el.value = toText(S[el.dataset.g][el.dataset.k], kindOf(el.dataset.g, el.dataset.k));
+    });
+    // 입력 방식
+    const raw = S.mode === 'raw';
+    $('#rawInputs').hidden = !raw;
+    $('#curInputs').hidden = raw;
+    $('#modeHint').textContent = '노란 칸(광고비·노출수·클릭수·전환수·매출액)만 넣으면 나머지 지표는 자동으로 계산돼요.';
+    const cR = calc(S.cur);
+    const mv = { cpm: won(cR.cpm), ctr: pct(cR.ctr), cpc: won(cR.cpc), cvr: pct(cR.cvr), cpa: won(cR.cpa), aov: won(cR.aov),
+      roas: isNum(cR.roas) ? (cR.roas * 100).toFixed(1) + '%' : '–' };
+    Object.keys(mv).forEach((k) => { $('#mv-' + k).textContent = mv[k]; });
+    // 비율 입력 모드: 그 비율로 계산되는 결과 숫자를 칸 아래에 표시
+    const c0 = calc(S.cur);
+    $('#ccalc-spend').textContent = '';
+    $('#ccalc-cpm').innerHTML = '<span class="cl">' + '→ 노출수 ' + cnt(c0.imp, '회') + '</span>';
+    $('#ccalc-ctr').innerHTML = '<span class="cl">' + '→ 클릭수 ' + cnt(c0.clicks, '회') + ' · CPC ' + won(c0.cpc) + '</span>';
+    $('#ccalc-cvr').innerHTML = '<span class="cl">' + '→ 전환수 ' + cnt(c0.conv, '건') + ' · CPA ' + won(c0.cpa) + '</span>';
+    $('#ccalc-aov').innerHTML = '<span class="cl">' + '→ 매출액 ' + won(c0.rev) + '</span>';
+    ['#goal', '#goal2'].forEach((id) => { const g = $(id); if (g && document.activeElement !== g) g.value = toText(S.goal, 'roas'); });
+    $('#real').checked = S.real;
+
+    const now = calc(S.cur);
+    const typed = calc(S.aft);
+    const E = effective();
+    const aft = calc(E.d);
+
+    KEYS.forEach((k) => {
+      const r = div(S.aft[k], S.cur[k]) - 1;
+      const rg = $('#rng-' + k); rg.value = Math.round(r * 100);
+      rg.style.setProperty('--f', ((rg.value - rg.min) / (rg.max - rg.min) * 100) + '%'); // 노란 채움 길이
+      // 변화율·예산 영향 값은 오른쪽 퍼널에서 보여줌
+    });
+
+    // 시나리오 비교표 (가로)
+    {
+      const ch = KEYS.map((k) => [k, div(S.aft[k], S.cur[k]) - 1]).filter(([, r]) => Math.abs(r) >= 0.0005)
+        .map(([k, r]) => (k === 'spend' ? '광고비' : k === 'aov' ? '객단가' : k.toUpperCase()) + ' ' + chg(r));
+      if (S.real && Math.abs(E.k - 1) > 0.0005) ch.push('효율 저하 반영');
+      const n0 = (v) => (isNum(v) ? Math.round(v).toLocaleString('ko-KR') : '–');
+      const r1 = (v) => (isNum(v) ? (v * 100).toFixed(1) + '%' : '–');
+      const cols = [
+        ['광고비', 'spend', won, 0], ['CPM', 'cpm', won, -1], ['노출수', 'imp', n0, 1], ['CTR', 'ctr', pct, 1],
+        ['클릭수', 'clicks', n0, 1], ['CPC', 'cpc', won, -1], ['CVR', 'cvr', pct, 1], ['전환수', 'conv', n0, 1],
+        ['CPA', 'cpa', won, -1], ['매출액', 'rev', won, 1], ['ROAS', 'roas', r1, 1]
+      ];
+      $('#scen').innerHTML =
+        '<thead><tr><th>구분</th>' + cols.map((c) => '<th>' + c[0] + '</th>').join('') + '</tr></thead><tbody>' +
+        '<tr><td>현황</td>' + cols.map((c) => '<td>' + c[2](now[c[1]]) + '</td>').join('') + '</tr>' +
+        '<tr><td>시나리오</td>' + cols.map((c) => { const r = div(aft[c[1]], now[c[1]]) - 1; const cl = (chg(r) === '–' ? '' : tone(r, c[3])) + (c[1] === 'roas' ? ' hl' : ''); return '<td class="' + cl.trim() + '">' + c[2](aft[c[1]]) + '</td>'; }).join('') + '</tr>' +
+        '<tr><td>변화율</td>' + cols.map((c) => { const r = div(aft[c[1]], now[c[1]]) - 1; const t = chg(r); return '<td class="' + (t === '–' ? 'flat' : tone(r, c[3])) + '">' + (t === '–' ? '0%' : t) + '</td>'; }).join('') + '</tr></tbody>';
+    }
+
+    // 퍼널: 광고비 → 노출 → 클릭 → 구매 → 매출. 막대 = 지금(회색)·바꾼 후(파랑), 단계 사이 = 곱하고 나누는 지표
+    // 광고비·매출은 같은 '원' 기준 길이(매출 막대 ÷ 광고비 막대 = ROAS). 노출·클릭·구매는 단위가 달라 광고비 막대에서 점점 좁아지는 흐름 모양만
+    const M = Math.max(now.spend, aft.spend, now.rev, aft.rev) || 1;
+    const spendMaxW = 100 * Math.max(now.spend, aft.spend) / M;
+    const W = [spendMaxW, spendMaxW * 0.86, spendMaxW * 0.72, spendMaxW * 0.58];
+    const stage = (i, lb, a, b, f, dir) => {
+      const r = div(b, a) - 1, t = chg(r);
+      let wa, wb, mark = '';
+      if (i === 4) { wa = 100 * a / M; wb = 100 * b / M; mark = '<span class="fn-mark" style="left:' + (100 * aft.spend / M).toFixed(1) + '%"><i>광고비</i></span>'; }
+      else { const mx = Math.max(a, b) || 1; wa = W[i] * a / mx; wb = W[i] * b / mx; }
+      return '<div class="fn-stage"><span class="fn-lb">' + lb + '</span>' +
+        '<div class="fn-bars' + (i === 4 ? ' rev' : '') + '"><span class="fn-bar now" style="width:' + wa.toFixed(1) + '%"></span><span class="fn-bar aft" style="width:' + wb.toFixed(1) + '%"></span>' + mark + '</div>' +
+        '<span class="fn-v"><b>' + f(b) + '</b><small>지금 ' + f(a) + (t === '–' ? '' : ' · <em class="' + tone(r, dir) + '">' + t + '</em>') + '</small></span></div>';
+    };
+    const op = (sym, k) => {
+      const typedMoved = Math.abs(div(S.aft[k], S.cur[k]) - 1) > 0.0005, effMoved = !typedMoved && Math.abs(div(aft[k], now[k]) - 1) > 0.0005;
+      const cls = typedMoved ? ' on' : effMoved ? ' eff' : '';
+      return '<div class="fn-op"><button type="button" class="fn-pill' + cls + '" data-k="' + k + '" title="누르면 왼쪽 ' + K[k].nm + ' 슬라이더로 이동">' + sym + ' ' + K[k].nm.replace(' (클릭률)', '') + ' ' + K[k].fmt(now[k]) + (Math.abs(div(aft[k], now[k]) - 1) > 0.0005 ? ' → ' + K[k].fmt(aft[k]) : '') + (typedMoved ? ' <i class="tag mine">내가 바꿈</i>' : effMoved ? ' <i class="tag eff">예산 영향</i>' : '') + '</button></div>';
+    };
+    const rOk = aft.roas >= S.goal;
+    setTimeout(() => hiLink(LINK.k), 0); // 다시 그린 뒤에도 짝꿍 강조 유지
+    $('#funnel').innerHTML =
+      stage(0, '광고비', now.spend, aft.spend, won, 0) + op('÷', 'cpm') +
+      stage(1, '노출수', now.imp, aft.imp, (v) => cnt(v, '회'), 1) + op('×', 'ctr') +
+      stage(2, '클릭수', now.clicks, aft.clicks, (v) => cnt(v, '회'), 1) + op('×', 'cvr') +
+      stage(3, '전환수', now.conv, aft.conv, (v) => cnt(v, '건'), 1) + op('×', 'aov') +
+      stage(4, '매출', now.rev, aft.rev, won, 1);
+    $('#fnRoas').innerHTML = '<div class="fn-roas ' + (rOk ? 'up' : 'down') + '"><span>ROAS</span><b>' + (now.roas * 100).toFixed(1) + '% → ' + (aft.roas * 100).toFixed(1) + '%</b><small>목표 ' + roas(S.goal) + (rOk ? ' 통과' : ' 미달') + '</small></div>';
+    $('#results').innerHTML = '';
+
+    // 해석 문장
+    const m = [];
+    const r = (k) => div(S.aft[k], S.cur[k]) - 1;
+    const moved = (k) => Math.abs(r(k)) > 0.0005;
+    // 순서 = 퍼널·슬라이더 순서: 광고비 → CPM → CTR → CVR → 객단가
+    if (moved('spend')) {
+      const rs = r('spend');
+      const gap = div(aft.rev, typed.rev) - 1;
+      if (S.real && rs > 0) m.push(['warn', '광고비를 ' + chg(rs) + ' 늘리면 더 비싼 자리, 덜 관심 있는 사람에게까지 광고가 나가서 CPM은 ' + chg(div(aft.cpm, typed.cpm) - 1) + ', CTR은 ' + chg(div(aft.ctr, typed.ctr) - 1) + ', CVR은 ' + chg(div(aft.cvr, typed.cvr) - 1) + ' 변한다고 가정했어요. 그래서 매출은 효율이 그대로일 때보다 ' + (Math.abs(gap) * 100).toFixed(1) + '% 적은 ' + won(aft.rev) + '으로 예상돼요.']);
+      else if (S.real) m.push(['', '광고비를 줄이면 매출도 줄지만, 효율이 낮던 노출부터 빠져서 ROAS는 조금 올라가요.']);
+      else m.push(['', '현실 반영을 끈 상태라 광고비를 바꾼 만큼 매출도 똑같이 바뀌고 ROAS는 그대로예요. 실제로는 그렇지 않은 경우가 많아요.']);
+    }
+    if (moved('cpm')) m.push(['', 'CPM이 ' + chg(r('cpm')) + ' 바뀌면 같은 돈으로 보여줄 수 있는 횟수가 ' + (r('cpm') > 0 ? '줄어들어 뒤의 숫자가 모두 줄어요' : '늘어나 뒤의 숫자가 모두 늘어요') + '. CPM이 오르면 CTR이나 CVR도 그만큼 좋아져야 본전이에요.']);
+    if (moved('ctr')) m.push(['', 'CTR이 ' + chg(r('ctr')) + ' 바뀌면 같은 노출에서 클릭이 그만큼 ' + (r('ctr') > 0 ? '늘어' : '줄어') + ' 구매·매출도 같은 비율로 따라 움직여요. CPC는 반대로 ' + (r('ctr') > 0 ? '내려가요' : '올라가요') + '.']);
+    if (moved('cvr')) m.push(['', 'CVR이 ' + chg(r('cvr')) + ' 바뀌면 클릭 수는 그대로인데 구매·매출만 ' + (r('cvr') > 0 ? '늘어요' : '줄어요') + '. 클릭 이후(상세페이지·가격·혜택)가 결정하는 지표예요.']);
+    if (moved('aov')) m.push(['', '객단가는 전환수는 그대로 두고 매출만 바꿔요. 그래서 CPA는 변하지 않고 ROAS만 ' + (r('aov') > 0 ? '올라가요' : '내려가요') + '.']);
+    if (!m.length) m.push(['', '왼쪽 슬라이더를 움직여 보세요. 지표 하나를 10% 바꾸면 어떤 숫자가 함께 바뀌는지 보입니다.']);
+    $('#msgs').innerHTML = m.map(([c, x]) => '<p class="msg ' + c + '">' + x + '</p>').join('');
+
+    renderGoal(now);
+    renderWI(now);
+    renderBench(now);
+    renderQuads(now);
+  }
+
+  // 지표별 목표값: 목표 ROAS에서 거꾸로 계산
+  function renderBench(now) {
+    const g = S.goal;
+    // 히트맵: CPM 5단계 × CVR 5단계 → 필요한 최소 CTR
+    const cs = [0.5, 0.75, 1, 1.25, 1.5];
+    const ps = [0.6, 0.8, 1, 1.2, 1.5];
+    let h = '<table class="heat"><thead><tr><th class="corner"><span class="c-top">CVR →</span><span class="c-bot">CPM ↓</span></th>' +
+      cs.map((x) => '<th' + (x === 1 ? ' class="now"' : '') + '>' + pct(now.cvr * x) + (x === 1 ? '<small>지금</small>' : '') + '</th>').join('') + '</tr></thead><tbody>';
+    const reqOf = (x, y) => (now.cpm * y) * g / (1000 * now.cvr * x * now.aov);
+    const curOk = now.ctr >= reqOf(1, 1);
+    // 지금 칸에서 가장 적게 움직여 통과(초록)하는 칸 → 점선 테두리
+    let tgt = null;
+    if (!curOk) {
+      let best = Infinity;
+      ps.forEach((y, yi) => cs.forEach((x, xi) => {
+        if (now.ctr < reqOf(x, y)) return;
+        const d = Math.abs(xi - cs.indexOf(1)) + Math.abs(yi - ps.indexOf(1));
+        if (d < best) { best = d; tgt = x + '_' + y; }
+      }));
+    }
+    ps.forEach((y) => {
+      h += '<tr><th' + (y === 1 ? ' class="now"' : '') + '>' + won(now.cpm * y) + (y === 1 ? '<small>지금</small>' : '') + '</th>';
+      cs.forEach((x) => {
+        const req = reqOf(x, y);
+        const cls = now.ctr >= req ? 'ok' : now.ctr >= req * 0.8 ? 'near' : 'no';
+        h += '<td class="' + cls + (x === 1 && y === 1 ? ' cur' : '') + (tgt === x + '_' + y ? ' tgt' : '') + '">' + pct(req) + '</td>';
+      });
+      h += '</tr>';
+    });
+    $('#heat').innerHTML = h + '</tbody></table>';
+    // 목표 달성까지 한 줄: 지금 CTR 그대로 두고 CVR만, 또는 CPM만 바꿀 때 필요한 값 (정확한 계산값)
+    if (curOk) {
+      $('#heatGo').innerHTML = '<b>이미 통과</b> · 지금 CTR ' + pct(now.ctr) + '로 목표 ROAS ' + roas(g) + '를 낼 수 있어요.';
+    } else {
+      const needCvr = now.cpm * g / (1000 * now.ctr * now.aov);
+      const needCpm = now.ctr * 1000 * now.cvr * now.aov / g;
+      $('#heatGo').innerHTML = '<b>목표 달성까지</b> · CTR ' + pct(now.ctr) + ' 그대로라면 <b>CVR을 ' + pct(now.cvr) + ' → ' + pct(needCvr) + '</b>로 올리거나, <b>CPM을 ' + won(now.cpm) + ' → ' + won(needCpm) + '</b>으로 낮추면 통과' +
+        (tgt ? '' : ' (표 범위 밖이에요)') + '.';
+    }
+    $('#heatNote').innerHTML =
+      '칸 숫자는 목표를 내는 데 필요한 <b>최소 CTR</b>이고, 색은 지금 CTR ' + pct(now.ctr) + '로 그 기준을 넘는지 보여줘요. ' +
+      '<b>아래로 갈수록</b> CPM이 비싸져 필요한 CTR이 오르고, <b>오른쪽으로 갈수록</b> CVR이 높아져 필요한 CTR이 내려가요.';
+  }
+
+  /* 3단계: 지표를 바꾸면 ROAS는? */
+  const WIK = ['cpm', 'ctr', 'cvr', 'aov']; // 광고비 흐름 순서
+  const WIN = { ctr: ['CTR', '클릭률'], cvr: ['CVR', '구매 전환율'], aov: ['객단가', '한 번 살 때 금액'], cpm: ['CPM', '낮출수록 좋아요'] };
+  $('#wiRows').innerHTML = WIK.map((k) =>
+    '<div class="srow"><span class="b-head"><span class="sl">' + WIN[k][0] + '</span><small>' + WIN[k][1] + '</small></span>' +
+    '<span class="b-in"><span class="b-col"><small>지금</small><span class="b-now" id="wiv-' + k + '"></span></span><span class="ca">→</span><span class="b-col"><small>목표값</small><span class="in wi-tin"><input data-wt="' + k + '" inputmode="decimal" aria-label="목표 ' + WIN[k][0] + '"><span class="u">' + (k === 'ctr' || k === 'cvr' ? '%' : '원') + '</span></span></span></span></div>').join('<span class="amp" aria-hidden="true">&amp;</span>');
+  const sgn = (v) => (v > 0 ? '+' : '') + (+v.toFixed(1)) + '%';
+  function renderWI(now) {
+    const m = {}; WIK.forEach((k) => { m[k] = 1 + S.wi[k] / 100; });
+    const nd = Object.assign({}, S.cur, { ctr: S.cur.ctr * m.ctr, cvr: S.cur.cvr * m.cvr, aov: S.cur.aov * m.aov, cpm: S.cur.cpm * m.cpm });
+    const nx = calc(nd);
+    WIK.forEach((k) => {
+      const tn = S.wi[k] === 0 ? 'flat' : tone(S.wi[k], K[k].dir);
+      $('#wiv-' + k).textContent = K[k].fmt(now[k]);
+      const ti = document.querySelector('input[data-wt="' + k + '"]');
+      if (ti !== document.activeElement) ti.value = toText(nd[k], K[k].kind);
+      ti.parentElement.classList.toggle('chg-up', tn === 'up'); ti.parentElement.classList.toggle('chg-down', tn === 'down');
+    });
+    const f = div(nx.roas, now.roas);
+    const g = S.goal;
+    const done = nx.roas >= g - 1e-9;
+    $('#wiRes').innerHTML =
+      '<div class="wi-big"><span>ROAS</span><span class="r old">' + roas(now.roas) + '</span><span>→</span><span class="r">' + roas(nx.roas) + '</span></div>' +
+      '<div class="wi-sub"><span>같은 광고비의 매출<b>' + won(now.rev) + ' → ' + won(nx.rev) + '</b></span><span>CPA (구매 1건 비용)<b>' + won(now.cpa) + ' → ' + won(nx.cpa) + '</b></span></div>';
+  }
+
+  // ROAS 차이: %p(차이)와 지금 대비 %(상대 비율)를 함께 표시
+  const gapTxt = (from, to) => 'ROAS <b>' + (to >= from ? '+' : '−') + (Math.abs(to - from) * 100).toFixed(1) + '%p</b> (지금 대비 ' + chg(div(to, from) - 1) + ')';
+  function renderGoal(now) {
+    const g = S.goal;
+    const need = div(g, now.roas);
+    const nowTxt = '지금 ROAS <b>' + roas(now.roas) + '</b>';
+    if (!isNum(need) || need <= 0) { $('#aSum').innerHTML = nowTxt + ' · 목표 ROAS를 입력하세요.'; $('#ways').innerHTML = ''; return; }
+    if (need <= 1) {
+      $('#aSum').innerHTML = nowTxt + ' · <span class="ok">이미 목표를 넘고 있어요.</span> 목표를 더 높여 보세요.';
+      $('#ways').innerHTML = '';
+      return;
+    }
+    $('#aSum').innerHTML = '아래 중 <b>하나만</b> 이만큼 바꿔도 목표 달성';
+    const card = (no, nm, hint, nowV, val, fmt, lower) =>
+      '<div class="way-wrap"><div class="way"><span class="wl"><b>' + no + ' ' + nm + (lower ? ' 낮추기' : ' 올리기') + '</b></span>' +
+      '<div class="cmp"><span class="cn"><small>지금</small>' + fmt(nowV) + '</span><span class="ca">→</span><span class="cg"><small>목표값 (' + (lower ? '최대' : '최소') + ')</small>' + fmt(val) + '</span></div></div>' +
+      '<span class="w-how">' + hint + ' ↲</span></div>';
+    const orSep = '<span class="or-sep" aria-hidden="true">or</span>';
+    $('#ways').innerHTML = [
+      card('①', 'CPM', '타겟·지면 조정', now.cpm, now.cpm / need, won, true),
+      card('②', 'CTR', '소재·문구 개선', now.ctr, now.ctr * need, pct, false),
+      card('③', 'CPC', '입찰·소재 효율', now.cpc, now.cpc / need, won, true),
+      card('④', 'CVR', '상세페이지·혜택 개선', now.cvr, now.cvr * need, pct, false),
+      card('⑤', 'CPA', '구매 효율 개선', now.cpa, now.cpa / need, won, true),
+      card('⑥', '객단가', '세트·묶음 판매', now.aov, now.aov * need, won, false)
+    ].join(orSep);
+  }
+
+  // 사분면: 목표 기준 이상이면 위쪽(행)/왼쪽(열)
+  function renderQuads(now) {
+    // 기준 = 4단계에서 정한 목표값
+    const b = {}; ['ctr', 'cvr', 'cpm'].forEach((k) => { b[k] = S.cur[k] * (1 + S.wi[k] / 100); });
+    // CPM은 목표와 같으면(0.5% 이내) '목표 이내(미만 칸)'로 봄 — 비싸지 않았으니까
+    const hi = (k) => (k === 'cpm' ? now[k] > b[k] * 1.005 : now[k] >= b[k]);
+  
+    // '지금 여기' 배지 신호등: 둘 다 충족=파랑, 더 중요한 지표만 충족=초록, 덜 중요한 지표만 충족=노랑, 둘 다 미달=빨강
+    // 중요도: 구매에 가까울수록 높음 → CVR > CTR > CPM. CPM은 비용이라 목표보다 쌀 때가 '충족'
+    const rank = { cvr: 3, ctr: 2, cpm: 1 };
+    const met = (k) => (k === 'cpm' ? !hi(k) : hi(k));
+    const sig = (a, b) => (met(a) && met(b) ? 'sb' : !met(a) && !met(b) ? 'sr' : met(rank[a] > rank[b] ? a : b) ? 'sg' : 'sy');
+    const quad = (title, rowK, colK, rowNm, colNm, cells, note) => {
+      const ri = hi(rowK) ? 0 : 1, ci = hi(colK) ? 0 : 1, sc = sig(rowK, colK);
+      let q = '<div><p class="qt">' + title + '</p><div class="quad"><span></span><span class="qh' + (ci === 0 ? ' on' : '') + '">' + colNm + ' 목표 이상</span><span class="qh' + (ci === 1 ? ' on' : '') + '">' + colNm + ' 목표 미만</span>';
+      [0, 1].forEach((r) => {
+        q += '<span class="qh side' + (r === ri ? ' on' : '') + '">' + rowNm + '<br>' + (r === 0 ? '목표 이상' : '목표 미만') + '</span>';
+        [0, 1].forEach((c) => {
+          const [t1, d1] = cells[r][c];
+          q += '<div class="qc' + (r === ri && c === ci ? ' on ' + sc : '') + '"><b>' + t1 + '</b>' + d1 + '</div>';
+        });
+      });
+      return q + '</div>' + (note ? '<div class="q-read">' + note + '</div>' : '') + '</div>';
+    };
+    $('#quads').innerHTML =
+      quad('CTR × CVR: 광고 반응과 구매 전환', 'ctr', 'cvr', 'CTR', 'CVR', [
+        [['둘 다 좋음', '소재와 랜딩 모두 목표 이상. 예산 증액 후보입니다.'], ['클릭은 되는데 구매가 안 됨', '소재가 약속한 것과 랜딩·상품이 다르거나 호기심 클릭. 랜딩·오퍼·타겟 의도 점검.']],
+        [['유입은 적지만 사는 사람은 삼', '소재 후킹이 약합니다. 소재 테스트가 우선.'], ['타겟부터 다시', '타겟·소재·랜딩 전반을 다시 점검.']]
+      ], '<b>읽는 법</b> CTR은 광고가 눈길을 끄는 힘(소재), CVR은 클릭한 사람을 사게 만드는 힘(랜딩·상품·혜택)이에요. 둘은 곱해져서 ROAS에 같은 크기로 영향을 줘요. 한쪽만 낮다면 낮은 쪽부터 고치는 게 가장 빨라요.' +
+        '<span class="q-num">지금 CTR ' + pct(now.ctr) + ' · 목표 ' + pct(b.ctr) + '<br>지금 CVR ' + pct(now.cvr) + ' · 목표 ' + pct(b.cvr) + '</span>') +
+      quad('CPM × CTR: 노출 단가와 반응', 'cpm', 'ctr', 'CPM', 'CTR', [
+        [['비싼 지면, 높은 반응', 'CTR이 CPM보다 더 큰 비율로 높으면 괜찮습니다. CPC로 확인.'], ['비싸고 반응도 낮음', '가장 나쁜 조합. 타겟 과밀·소재 피로 점검.']],
+        [['싸고 반응 좋음', '가장 좋은 조합. 확장 여지가 있습니다.'], ['싼 데는 이유가 있음', '반응 낮은 지면일 수 있습니다. CPC·CVR로 실제 효율 확인.']]
+      ], '<b>읽는 법</b> 클릭 1번 값(CPC) = CPM ÷ (1,000 × CTR)이에요. 그래서 CPM이 20% 올라도 CTR이 20% 오르면 CPC는 그대로예요. 비싼 지면이 나쁜 게 아니라, 비싼 만큼 반응이 따라오는지가 핵심이에요. (원리 3)' +
+        '<span class="q-num">지금 CPC ' + won(now.cpc) + ' · 목표 기준 CPC ' + won(div(b.cpm, 1000 * b.ctr)) + '</span>');
+  }
+
+  /* ---------- 슬라이더 ↔ 퍼널 알약 짝꿍 강조 ---------- */
+  const LINK = { k: null, t: 0 };
+  function hiLink(k) {
+    document.querySelectorAll('.link-hi').forEach((e) => e.classList.remove('link-hi'));
+    if (!k) return;
+    document.querySelectorAll('#levers > div[data-k="' + k + '"], .fn-pill[data-k="' + k + '"]').forEach((e) => e.classList.add('link-hi'));
+  }
+  const setLink = (k) => { clearTimeout(LINK.t); LINK.k = k; hiLink(k); };
+  const dropLink = (ms) => { clearTimeout(LINK.t); LINK.t = setTimeout(() => { LINK.k = null; hiLink(null); }, ms); };
+  document.addEventListener('mouseover', (e) => {
+    const el = e.target.closest && e.target.closest('#levers > div[data-k], .fn-pill[data-k]');
+    if (el) setLink(el.dataset.k);
+  });
+  document.addEventListener('mouseout', (e) => {
+    const el = e.target.closest && e.target.closest('#levers > div[data-k], .fn-pill[data-k]');
+    if (el && !(e.relatedTarget && el.contains(e.relatedTarget)) && !(document.activeElement && el.contains(document.activeElement))) dropLink(150);
+  });
+  document.addEventListener('focusin', (e) => { const r = e.target.closest && e.target.closest('#levers > div[data-k]'); if (r) setLink(r.dataset.k); });
+  document.addEventListener('focusout', (e) => { if (e.target.closest && e.target.closest('#levers > div[data-k]')) dropLink(600); });
+  document.addEventListener('input', (e) => { const r = e.target.closest && e.target.closest('#levers > div[data-k]'); if (r) { setLink(r.dataset.k); if (document.activeElement !== e.target) dropLink(1200); } });
+  document.addEventListener('click', (e) => {
+    const pill = e.target.closest && e.target.closest('.fn-pill[data-k]');
+    if (!pill) return;
+    const row = document.querySelector('#levers > div[data-k="' + pill.dataset.k + '"]');
+    if (!row) return;
+    const r = row.getBoundingClientRect();
+    if (r.top < 0 || r.bottom > innerHeight) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    row.classList.remove('link-flash'); void row.offsetWidth; row.classList.add('link-flash');
+    const rng = row.querySelector('input[type=range]'); if (rng) rng.focus({ preventScroll: true });
+  });
+
+  /* ---------- 이벤트 ---------- */
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (el.type === 'range' && el.dataset.k) {
+      S.aft[el.dataset.k] = S.cur[el.dataset.k] * (1 + Number(el.value) / 100);
+    } else if (el.dataset.g) {
+      const g = el.dataset.g, k = el.dataset.k;
+      const v = parse(el.value, kindOf(g, k));
+      if (!isNum(v) || v <= 0) return;
+      if (g === 'raw') {
+        // 절대 수치 → 비율 재계산, '바꾼 후'는 같은 비율 유지
+        S.raw[k] = v;
+        const next = curFromRaw(S.raw);
+        KEYS.forEach((x) => { const ratio = div(S.aft[x], S.cur[x]) || 1; S.cur[x] = next[x]; S.aft[x] = next[x] * ratio; });
+        evenSplit(); // 내 지표가 바뀌면 방법 B 목표값도 새 숫자 기준으로 다시 나눔
+      } else if (g === 'cur') {
+        // 지금 숫자를 바꾸면 '바꾼 후'도 같은 비율을 유지
+        const ratio = div(S.aft[k], S.cur[k]) || 1;
+        S.cur[k] = v; S.aft[k] = v * ratio;
+        evenSplit();
+      } else S[g][k] = v;
+    } else if (el.dataset && el.dataset.wt) {
+      const k = el.dataset.wt;
+      const v = parse(el.value, K[k].kind);
+      if (!isNum(v) || v <= 0) return;
+      S.wi[k] = (v / S.cur[k] - 1) * 100;
+    } else if (el.id === 'goal' || el.id === 'goal2') {
+      const v = parse(el.value, 'roas'); if (!isNum(v) || v <= 0) return; S.goal = v; evenSplit(); // 목표가 바뀌면 방법 B도 다시 나눔
+    } else if (el.id === 'real') S.real = el.checked;
+    else return;
+    render(); save();
+  });
+  document.addEventListener('focusout', () => setTimeout(render, 0));
+  const setRule = (card, open) => {
+    const d = card.querySelector('.rule-more');
+    if (!d) return;
+    d.open = open;
+    card.classList.toggle('is-open', open);
+    const t = card.querySelector('.eq-tog');
+    if (t) { t.setAttribute('aria-expanded', String(open)); t.setAttribute('aria-label', open ? '자세한 설명 닫기' : '자세한 설명 열기'); }
+  };
+  $('#rulesAll').addEventListener('click', () => {
+    const cards = [...document.querySelectorAll('.rule')];
+    const open = !cards.every((c) => c.classList.contains('is-open'));
+    cards.forEach((c) => setRule(c, open));
+    $('#rulesAll').setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', (e) => {
+    const head = e.target.closest('.rule .rn, .rule h3, .rule > .eq');
+    if (!head) return;
+    const card = head.closest('.rule');
+    const d = card.querySelector('.rule-more');
+    if (!d) return;
+    d.open = !d.open;
+    card.classList.toggle('is-open', d.open);
+    const t = card.querySelector('.eq-tog');
+    if (t) { t.setAttribute('aria-expanded', String(d.open)); t.setAttribute('aria-label', d.open ? '자세한 설명 닫기' : '자세한 설명 열기'); }
+  });
+  // 숫자 칸을 누르면 기존 값 전체 선택 → 바로 새 숫자로 덮어쓰기
+  let justFocused = null;
+  document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (el.tagName !== 'INPUT' || el.getAttribute('inputmode') !== 'decimal') return;
+    justFocused = el;
+    el.select();
+    setTimeout(() => { if (document.activeElement === el) el.select(); }, 0);
+  });
+  document.addEventListener('mouseup', (e) => {
+    if (justFocused && e.target === justFocused) e.preventDefault(); // 클릭 순간 선택이 풀리지 않게
+    justFocused = null;
+  });
+  // 균등 분배: CTR·CVR·객단가에 똑같이 나눔(올림해야 반올림 오차로 목표에 살짝 못 미치는 일이 없음)
+  function evenSplit() {
+    const need = div(S.goal, calc(S.cur).roas);
+    const up = need > 1 ? Math.ceil((Math.pow(need, 1 / 3) - 1) * 1000) / 10 : 0;
+    S.wi = { ctr: up, cvr: up, aov: up, cpm: 0 };
+  }
+  if (!hadWi) evenSplit();
+  $('#wiFromB').addEventListener('click', () => { evenSplit(); render(); save(); });
+  $('#wiReset').addEventListener('click', () => { S.wi = { ctr: 0, cvr: 0, aov: 0, cpm: 0 }; render(); save(); });
+  // 예시 숫자로 초기화: 내 광고 지표·목표 ROAS·방법 B·4단계 슬라이더를 모두 처음 예시로
+  // 실수 방지: 첫 클릭은 '한 번 더 누르면 초기화'로 바뀌고, 3초 안에 다시 누르면 실행 (공유 페이지에선 확인창이 막힐 수 있어서 버튼으로 확인)
+  let armT = 0;
+  $('#resetSample').addEventListener('click', () => {
+    const btn = $('#resetSample');
+    if (!btn.classList.contains('armed')) {
+      btn.classList.add('armed'); btn.textContent = '한 번 더 누르면 초기화';
+      clearTimeout(armT); armT = setTimeout(() => { btn.classList.remove('armed'); btn.textContent = '예시 숫자로 초기화'; }, 3000);
+      return;
+    }
+    clearTimeout(armT); btn.classList.remove('armed'); btn.textContent = '예시 숫자로 초기화';
+    S.cur = Object.assign({}, SAMPLE); S.aft = Object.assign({}, SAMPLE); S.raw = rawFromCur(SAMPLE);
+    S.goal = 1.3; S.real = true; evenSplit();
+    document.activeElement && document.activeElement.blur && document.activeElement.blur();
+    render(); save();
+  });
+  $('#resetAft').addEventListener('click', () => { S.aft = Object.assign({}, S.cur); render(); save(); });
+
+  render();
+})();
+</script>
+
+</body>
+</html>
