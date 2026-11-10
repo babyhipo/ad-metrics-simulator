@@ -1,4 +1,4 @@
-# Performance Marketing Metrics Simulator
+# Ad Metrics Simulator
 
 광고 지표(CPM · CTR · CVR · 객단가 · ROAS)가 서로 어떻게 연결되는지 직접 숫자를 바꿔 보며 익히는 시뮬레이터입니다.
 
@@ -16,4 +16,4 @@
 - 기본값은 예시 숫자입니다.
 
 ---
-Performance Marketing Metrics Simulator · 김유정 · 2026
+Ad Metrics Simulator · Yujeong Kim · 2026
