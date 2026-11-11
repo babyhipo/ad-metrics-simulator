@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>광고 지표 시뮬레이터</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2.0.5/fonts/variable/woff2/SUIT-Variable.css">
+<link rel="preload" href="fonts/SUIT-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+/* 글꼴: SUIT (SIL OFL 1.1, © SUNN) — 페이지와 함께 넣은 파일이라 외부 서버가 막혀도 그대로 나옴 */
+@font-face { font-family: 'SUIT Variable'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('fonts/SUIT-Variable.woff2') format('woff2-variations'), url('fonts/SUIT-Variable.woff2') format('woff2'); }
+
 /* Layout: 용어 사전 → 원리 4가지(한 줄) → 지금 숫자+목표 역산(지표별 목표값) → 진단(조합 해석+히트맵) → 예산을 바꾸면?(슬라이더 + 깔때기). 노란 칸 = 입력 칸 */
 :root {
   --bg: #F4F6F9; --surface: #FFFFFF; --surface-2: #F6F8FB;
