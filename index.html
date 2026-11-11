@@ -5,9 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>광고 지표 시뮬레이터</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2.0.5/fonts/variable/woff2/SUIT-Variable.css">
 <style>
 /* Layout: 용어 사전 → 원리 4가지(한 줄) → 지금 숫자+목표 역산(지표별 목표값) → 진단(조합 해석+히트맵) → 예산을 바꾸면?(슬라이더 + 깔때기). 노란 칸 = 입력 칸 */
 :root {
@@ -16,8 +15,8 @@
   --accent: #2348C9; --accent-soft: #E8EDFC;
   --input: #FFF9DB; --input-line: #F0E3A0; --input-ink: #3B3206;
   --good: #137A4B; --good-bg: #E2F4EA; --bad: #C2372C; --bad-bg: #FBE5E2;
-  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  --font-num: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-body: "SUIT Variable", SUIT, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: "SUIT Variable", SUIT, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; /* 숫자도 같은 글꼴(한글 섞여도 안 깨짐), 폭은 tabular-nums로 고정 */
   --r: 12px;
 }
 @media (prefers-color-scheme: dark) {
@@ -34,7 +33,7 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-variant-numeric: tabular-nums; font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
 .wrap {
   max-width: 1580px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 56px;
@@ -820,6 +819,8 @@ table.scen { width: 100%; border-collapse: collapse; font-size: 14px; min-width:
 .step-head .raw-tools { margin-left: auto; align-self: flex-end; flex: none; }
 @media (max-width: 640px) { .step-head .raw-tools { width: 100%; display: flex; justify-content: flex-end; } }
 .raw-tools .btn.armed { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }
+/* 입력칸·버튼도 숫자 폭 고정 */
+input, button, select, textarea { font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
