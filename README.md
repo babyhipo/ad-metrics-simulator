@@ -14,7 +14,7 @@
 - 서버 없이 브라우저에서만 동작합니다. 입력한 숫자는 각자의 브라우저에만 저장되고 어디로도 전송되지 않습니다.
 - 4단계의 "증액 시 효율 저하"는 실제 매체 데이터가 아닌 가정 공식(광고비 k배 → CPM k^0.15, CTR k^-0.07, CVR k^-0.13)으로 계산한 예상치입니다.
 - 기본값은 예시 숫자입니다.
-- 글꼴: [SUIT](https://sun.fo/suit) (© SUNN, SIL Open Font License 1.1 — `fonts/OFL.txt`)
+- 글꼴: [Pretendard](https://github.com/orioncactus/pretendard) (© Kil Hyung-jin, SIL Open Font License 1.1 — `fonts/OFL.txt`)
 
 ---
 Ad Metrics Simulator · Yujeong Kim · 2026

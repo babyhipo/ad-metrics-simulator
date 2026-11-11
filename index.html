@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>광고 지표 시뮬레이터</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preload" href="fonts/SUIT-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/PretendardVariable.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-/* 글꼴: SUIT (SIL OFL 1.1, © SUNN) — 페이지와 함께 넣은 파일이라 외부 서버가 막혀도 그대로 나옴 */
-@font-face { font-family: 'SUIT Variable'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('fonts/SUIT-Variable.woff2') format('woff2-variations'), url('fonts/SUIT-Variable.woff2') format('woff2'); }
+/* 글꼴: Pretendard (SIL OFL 1.1, © Kil Hyung-jin) — 페이지와 함께 넣은 파일이라 외부 서버가 막혀도 그대로 나옴 */
+@font-face { font-family: 'Pretendard Variable'; font-weight: 45 920; font-style: normal; font-display: swap; src: url('fonts/PretendardVariable.woff2') format('woff2-variations'), url('fonts/PretendardVariable.woff2') format('woff2'); }
 
 /* Layout: 용어 사전 → 원리 4가지(한 줄) → 지금 숫자+목표 역산(지표별 목표값) → 진단(조합 해석+히트맵) → 예산을 바꾸면?(슬라이더 + 깔때기). 노란 칸 = 입력 칸 */
 :root {
@@ -17,8 +17,8 @@
   --accent: #2348C9; --accent-soft: #E8EDFC;
   --input: #FFF9DB; --input-line: #F0E3A0; --input-ink: #3B3206;
   --good: #137A4B; --good-bg: #E2F4EA; --bad: #C2372C; --bad-bg: #FBE5E2;
-  --font-body: "SUIT Variable", SUIT, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  --font-num: "SUIT Variable", SUIT, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; /* 숫자도 같은 글꼴(한글 섞여도 안 깨짐), 폭은 tabular-nums로 고정 */
+  --font-body: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; /* 숫자도 같은 글꼴(한글 섞여도 안 깨짐), 폭은 tabular-nums로 고정 */
   --r: 12px;
 }
 @media (prefers-color-scheme: dark) {
